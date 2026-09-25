@@ -102,7 +102,6 @@ jobs:
           if ($run) { throw 'uninstaller left the start-with-Windows entry behind' }
           'install -> launch -> uninstall OK'
 
-
       - name: Checksums
         shell: bash
         run: |

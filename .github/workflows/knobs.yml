@@ -96,7 +96,6 @@ jobs:
           if (Test-Path $exe) { throw 'uninstaller left Knobs.exe behind' }
           'install -> launch -> uninstall OK'
 
-
       - name: Checksums
         shell: bash
         run: |
