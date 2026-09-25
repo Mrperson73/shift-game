@@ -58,7 +58,7 @@ describe('species mods', () => {
   });
 
   it('built-ins are valid shapes', () => {
-    expect(BUILT_IN.length).toBe(12);
+    expect(BUILT_IN.length).toBe(26);
     expect(new Set(BUILT_IN.map((s) => s.id)).size).toBe(BUILT_IN.length);
     for (const s of BUILT_IN) {
       expect(s.variants.length, s.id).toBe(6);

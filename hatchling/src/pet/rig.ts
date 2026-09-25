@@ -296,6 +296,8 @@ export class Rig {
     const shakeOff = clamp(po.shake, 0, 1);
     const wiggle = clamp(po.wiggle, 0, 1);
     const free = this.legMode === 'air' || this.legMode === 'held' || this.legMode === 'flail';
+    // Flying: body level, legs trailing, neck stretched forward.
+    const fly = clamp(po.fly, 0, 1);
 
     // Body.
     const lieY = p.bellyR + p.bellyDrop * 0.7 - 1;
@@ -323,6 +325,7 @@ export class Rig {
     } else {
       pitch = p.pitch + po.pitch - po.stretch * 0.38 - run * 0.14 * gw + sway;
     }
+    if (fly > 0) pitch = lerp(pitch, 0.06 + po.pitch + sway, fly);
     const hip: V = { x: shake(41, 0.7) + Math.sin(t * 15) * wiggle * p.hipR * 0.22, y: hipY };
     const chest = at(hip, pitch, { x: p.bodyLen, y: 0 });
     const belly = at(lerpV(hip, chest, 0.45), pitch, { x: 0, y: -p.bellyDrop });
@@ -333,7 +336,7 @@ export class Rig {
     // Neck and head, turned toward the look target within limits.
     const neckBase = at(chest, pitch, { x: p.chestR * 0.45, y: p.chestR * 0.3 });
     const ab = clamp(po.abs, 0, 1);
-    const neutralNeck = lerp(pitch + p.neckAngle + po.neck, po.neckAbs, ab);
+    const neutralNeck = lerp(lerp(pitch + p.neckAngle + po.neck, pitch + 0.2 + po.neck * 0.5, fly * 0.85), po.neckAbs, ab);
     const neutralHead = lerp(neutralNeck + p.headAngle + po.head, po.headAbs, ab);
     const toLook = Math.atan2(this.lookCur.y - neckBase.y, this.lookCur.x - neckBase.x);
     const headDir = neutralHead + 0.12; // the skull points roughly along neutralHead
@@ -364,6 +367,7 @@ export class Rig {
     // Tail.
     const tailBase = at(hip, pitch, { x: -p.hipR * 0.5, y: p.hipR * 0.12 });
     const segLen = p.tailLen / TAIL_SEGS;
+    const whip = !!this.species.features.whipTail;
     const tail: { p: V; r: number }[] = [{ p: tailBase, r: p.tailR }];
     let a = Math.PI + pitch * 0.7 + p.tailDroop - po.tailLift;
     const sag = (1 - p.tailStiff) * 0.07;
@@ -376,7 +380,7 @@ export class Rig {
       const sway = Math.sin(t * 1.3 - i * 0.5) * 0.025 * (1 - p.tailStiff * 0.6) + Math.sin(this.phase * TAU - i * 0.6) * 0.05 * gw + Math.sin(t * 15 - i * 0.5) * wiggle * 0.07;
       a += sag + po.tailCurl + wag + sway + this.tailOff[i] + shake(31 + i, 0.02);
       const np = add(prev, dir(a, segLen));
-      const r = Math.max(1.3, p.tailR * Math.pow(1 - f, 0.85)) + 0.2;
+      const r = Math.max(whip ? 0.5 : 1.3, p.tailR * Math.pow(1 - f, whip ? 1.6 : 0.85)) + 0.2;
       if (np.y < r * 0.65) np.y = r * 0.65; // lies on the ground instead of sinking in
       tail.push({ p: np, r });
       prev = np;
@@ -394,10 +398,17 @@ export class Rig {
       let ball: V;
       let lift = 0;
       const near = i === 0 || i === 2;
-      let mode = this.legMode;
+      let mode: LegMode | 'trail' = this.legMode;
       // A sitting four-legged pet keeps its front feet planted.
       if (front && mode === 'fold' && frontDrop < 0.5) mode = 'gait';
-      if (mode === 'gait') {
+      if (fly > 0.5) mode = 'trail';
+      if (mode === 'trail') {
+        // Flying: legs stretched out behind, feet together.
+        const back = pitch + Math.PI + (front ? 0.55 : 0.28) + (near ? 0 : 0.06);
+        ball = add(joint, dir(back, len * 0.93));
+        heel = add(joint, dir(back + 0.12, len * 0.72));
+        lift = 0;
+      } else if (mode === 'gait') {
         const idleX = (near ? 1 : -1) * stride * (front ? 0.08 : 0.1);
         const f = this.footAt(this.phase + phaseOff, stride, stance, liftH);
         let x = lerp(idleX, f.x, gw);
@@ -453,7 +464,7 @@ export class Rig {
       }
       cur.lift = lift;
       const { mid: knee, end } = ik2(joint, cur.heel, spec.upper, spec.lower, spec.bend);
-      const toeDir = mode === 'gait' || mode === 'fold' ? -lift * 0.04 : -0.9;
+      const toeDir = mode === 'trail' ? pitch + Math.PI + 0.5 : mode === 'gait' || mode === 'fold' ? -lift * 0.04 : -0.9;
       const toe = add(cur.ball, dir(toeDir, spec.toe));
       return { hip: joint, knee, heel: end, ball: cur.ball, toe, lift };
     };

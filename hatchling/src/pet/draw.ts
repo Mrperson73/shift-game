@@ -4,59 +4,15 @@
 import type { CustomColors } from '../shared/types';
 import { at, clamp, dir, lerp, lerpV, type V } from './math';
 import type { ArmOut, LegOut, Rig } from './rig';
+import { darken, lighten, mix, type Palette, palette } from './colors';
+import { formShade, heavyUnderline, texture } from './skin';
+import { casque, coatPaths, dorsalSpines, drawWing, foldedWing, frillSpikes, helmetCrest, lacrimalHorns, legFeathers, neckFrill, neckSpines, osteoRidge, pteroCrest, scytheClaws, shoulderSpike, spikeRow, thumbSpike, wingSpread } from './parts';
+import { add2, capsule, type Ctx, dorsalAt, hash, horn, limb, silhouette, smoothClosed, type Station, stations, ventralAt, xy } from './shapes';
 import type { BodyParams, Features, SpeciesDef, Variant } from './species';
 
-type Ctx = CanvasRenderingContext2D;
+export type { Station } from './shapes';
 
-// ---------------- colour ----------------
-
-function hexRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-function rgbHex(r: number, g: number, b: number) {
-  const c = (x: number) => Math.round(clamp(x, 0, 255)).toString(16).padStart(2, '0');
-  return `#${c(r)}${c(g)}${c(b)}`;
-}
-export function mix(a: string, b: string, t: number) {
-  const [r1, g1, b1] = hexRgb(a);
-  const [r2, g2, b2] = hexRgb(b);
-  return rgbHex(lerp(r1, r2, t), lerp(g1, g2, t), lerp(b1, b2, t));
-}
-export const darken = (c: string, t: number) => mix(c, '#000000', t);
-export const lighten = (c: string, t: number) => mix(c, '#ffffff', t);
-
-export interface Palette {
-  body: string;
-  far: string;
-  belly: string;
-  pattern: string;
-  accent: string;
-  outline: string;
-  iris: string;
-  mouth: string;
-  /** Beaks, horns and nails. */
-  horn: string;
-  hornDark: string;
-  kind: Variant['pattern_kind'];
-}
-
-export function palette(v: Variant): Palette {
-  const horn = mix('#efe4c9', v.belly, 0.25);
-  return {
-    kind: v.pattern_kind,
-    body: v.body,
-    far: darken(v.body, 0.2),
-    belly: v.belly,
-    pattern: v.pattern,
-    accent: v.accent,
-    outline: mix(darken(v.body, 0.72), '#1a1420', 0.35),
-    iris: v.iris,
-    mouth: '#5b2230',
-    horn,
-    hornDark: darken(horn, 0.3),
-  };
-}
+export { darken, lighten, mix, type Palette, palette } from './colors';
 
 /** A species colour variant; -1 is the shiny colours. */
 export function variantOf(sp: SpeciesDef, variant: number): Variant {
@@ -70,140 +26,9 @@ export function paletteFor(sp: SpeciesDef, variant: number, colors?: CustomColor
   return palette(variantOf(sp, variant));
 }
 
-// ---------------- path helpers ----------------
-
-const add2 = (a: V, b: V): V => ({ x: a.x + b.x, y: a.y + b.y });
-const xy = (q: V): [number, number] => [q.x, q.y];
-
-/** Adds the convex hull of two circles (a tapered capsule) to a path. */
-function capsule(path: Path2D, a: V, ra: number, b: V, rb: number) {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const d = Math.hypot(dx, dy);
-  if (d < 1e-3 || d <= Math.abs(ra - rb)) {
-    const big = ra >= rb ? a : b;
-    const r = Math.max(ra, rb);
-    path.moveTo(big.x + r, big.y);
-    path.arc(big.x, big.y, r, 0, Math.PI * 2);
-    return;
-  }
-  const th = Math.atan2(dy, dx);
-  const ph = Math.acos(clamp((ra - rb) / d, -1, 1));
-  path.moveTo(a.x + Math.cos(th + ph) * ra, a.y + Math.sin(th + ph) * ra);
-  path.arc(a.x, a.y, ra, th + ph, th - ph + Math.PI * 2);
-  path.lineTo(b.x + Math.cos(th - ph) * rb, b.y + Math.sin(th - ph) * rb);
-  path.arc(b.x, b.y, rb, th - ph, th + ph);
-  path.closePath();
-}
-
-
-/** Smooth closed curve through points (Catmull-Rom converted to Béziers). */
-function smoothClosed(path: Path2D, pts: V[], tension = 1) {
-  const n = pts.length;
-  path.moveTo(pts[0].x, pts[0].y);
-  for (let i = 0; i < n; i++) {
-    const p0 = pts[(i - 1 + n) % n];
-    const p1 = pts[i];
-    const p2 = pts[(i + 1) % n];
-    const p3 = pts[(i + 2) % n];
-    const k = tension / 6;
-    path.bezierCurveTo(p1.x + (p2.x - p0.x) * k, p1.y + (p2.y - p0.y) * k, p2.x - (p3.x - p1.x) * k, p2.y - (p3.y - p1.y) * k, p2.x, p2.y);
-  }
-  path.closePath();
-}
-
-/** A curved, tapering horn or spike from `base` towards angle `ang`. */
-function horn(path: Path2D, base: V, ang: number, len: number, w: number, curve = 0) {
-  const n = dir(ang + Math.PI / 2, w / 2);
-  const b1 = add2(base, n);
-  const b2 = { x: base.x - n.x, y: base.y - n.y };
-  const tip = add2(base, dir(ang + curve, len));
-  const mid = add2(base, dir(ang + curve * 0.4, len * 0.5));
-  path.moveTo(b1.x, b1.y);
-  path.quadraticCurveTo(mid.x + n.x * 0.55, mid.y + n.y * 0.55, tip.x, tip.y);
-  path.quadraticCurveTo(mid.x - n.x * 0.55, mid.y - n.y * 0.55, b2.x, b2.y);
-  path.closePath();
-}
-
-/**
- * A cross-section of the body: a point on the spine, the direction towards the head, and how far
- * the back (`up`) and the belly (`dn`) reach from it. `k` says where it is: -9..-1 along the tail
- * (tip first), 0..1 from the hips to the chest, above 1 along the neck.
- */
-export interface Station {
-  p: V;
-  a: number;
-  up: number;
-  dn: number;
-  k: number;
-}
-
-/** Cross-sections from the tail tip to the head. The outline, belly and patterns all follow them. */
-function stations(r: Rig): Station[] {
-  const s = r.s;
-  const p = r.p;
-  const out: Station[] = [];
-  const n = s.tail.length;
-  for (let i = n - 1; i >= 1; i--) {
-    const q = s.tail[i];
-    const prev = s.tail[i - 1];
-    const f = i / (n - 1);
-    // The tail is a little deeper underneath near its base (the big tail-leg muscle).
-    out.push({ p: q.p, a: Math.atan2(prev.p.y - q.p.y, prev.p.x - q.p.x), up: q.r, dn: q.r * (1 + 0.3 * (1 - f)), k: -i });
-  }
-  const upN = dir(s.pitch + Math.PI / 2);
-  for (const t of [0, 0.3, 0.6, 0.85, 1]) {
-    const c = lerpV(s.hip, s.chest, t);
-    const R = lerp(s.hipR, s.chestR, t);
-    // How far the belly hangs below the body line here.
-    const bellyBottom = (c.x - s.belly.x) * upN.x + (c.y - s.belly.y) * upN.y + s.bellyR;
-    const w = clamp(1 - Math.abs(t - 0.45) / 0.55, 0, 1);
-    out.push({ p: c, a: s.pitch, up: R * (t === 0 ? 0.97 : t === 1 ? 0.78 : 0.9), dn: Math.max(R * 0.95, lerp(R * 0.95, bellyBottom, w)), k: t });
-  }
-  // The neck (its base is hidden in the shoulders; its end in the head).
-  const K = s.neck.length - 1;
-  for (let j = 1; j <= K; j++) {
-    const q = s.neck[j];
-    const nx = s.neck[Math.min(K, j + 1)];
-    const pv = s.neck[j - 1];
-    const rr = p.neckR * (1.1 - p.neckTaper * (j / K));
-    out.push({ p: q, a: Math.atan2(nx.y - pv.y, nx.x - pv.x), up: rr * 0.92, dn: rr * 1.08, k: 1 + j / K });
-  }
-  return out;
-}
-
-/** A point on the back at a station (plus `off` further out). */
-const dorsalAt = (q: Station, off = 0) => add2(q.p, dir(q.a + Math.PI / 2, q.up + off));
-/** A point on the belly side at a station (plus `off` further out). */
-const ventralAt = (q: Station, off = 0) => add2(q.p, dir(q.a - Math.PI / 2, q.dn + off));
-
-/** The whole body outline (tail, torso and neck) as one smooth shape. */
-function silhouette(r: Rig, st: Station[]): Path2D {
-  const t = r.s.tail;
-  const tip = t[t.length - 1];
-  const tipOut = add2(tip.p, dir(Math.atan2(tip.p.y - t[t.length - 2].p.y, tip.p.x - t[t.length - 2].p.x), tip.r * 1.8));
-  const last = st[st.length - 1];
-  const end = add2(last.p, dir(last.a, (last.up + last.dn) * 0.35));
-  const pts = [tipOut, ...st.map((q) => dorsalAt(q)), end, ...st.map((q) => ventralAt(q)).reverse()];
-  const path = new Path2D();
-  smoothClosed(path, pts, 0.9);
-  return path;
-}
-
-/** Adds a smooth limb segment from a to b: tapered, with muscle bulges in front and behind. */
-function limb(path: Path2D, a: V, b: V, wa: number, wb: number, front = 0, back = 0, at = 0.4) {
-  const ang = Math.atan2(b.y - a.y, b.x - a.x);
-  const n = dir(ang + Math.PI / 2);
-  const m = lerpV(a, b, at);
-  const wm = lerp(wa, wb, at);
-  const off = (q: V, k: number): V => ({ x: q.x + n.x * k, y: q.y + n.y * k });
-  const pts = [off(a, wa), off(m, wm + front), off(b, wb), add2(b, dir(ang, wb * 0.75)), off(b, -wb), off(m, -(wm + back)), off(a, -wa), add2(a, dir(ang, -wa * 0.7))];
-  smoothClosed(path, pts, 1);
-}
-
 // ---------------- head geometry (head coordinates: origin = jaw joint, x toward snout, y up) ----------------
 
-type HeadKind = 'default' | 'dome' | 'croc' | 'duck' | 'cera' | 'sauro';
+type HeadKind = 'default' | 'dome' | 'croc' | 'duck' | 'cera' | 'sauro' | 'ptero' | 'azhdarch' | 'parrot' | 'long' | 'horse';
 
 function headKind(f: Features): HeadKind {
   if (f.dome) return 'dome';
@@ -211,6 +36,10 @@ function headKind(f: Features): HeadKind {
   if (f.crocSnout) return 'croc';
   if (f.duckBill) return 'duck';
   if (f.frill) return 'cera';
+  if (f.longBeak) return f.pteroCrest ? 'ptero' : 'azhdarch';
+  if (f.parrotBeak) return 'parrot';
+  if (f.lowSnout) return 'long';
+  if (f.horseHead) return 'horse';
   return 'default';
 }
 
@@ -293,6 +122,72 @@ function skullPoints(r: Rig, f: Features): V[] {
         { x: (0.9 - round * 0.05) * L, y: 0 },
         { x: 0.5 * L, y: -0.02 * H },
       ];
+    case 'ptero':
+      // Pteranodon: a long, straight, toothless beak tapering to a point.
+      return [
+        { x: 0, y: 0 },
+        { x: (-0.08 - round * 0.05) * L, y: 0.45 * H },
+        { x: (0.02 - round * 0.03) * L, y: (0.95 + round * 0.1) * H },
+        { x: (0.2 - round * 0.05) * L, y: (1.0 + round * 0.1) * H },
+        { x: (0.45 - round * 0.08) * L, y: (0.7 + round * 0.2) * H },
+        { x: (0.76 - round * 0.1) * L, y: (0.36 + round * 0.15) * H },
+        { x: (1.03 - round * 0.1) * L, y: 0.05 * H },
+        { x: (0.8 - round * 0.08) * L, y: -0.02 * H },
+        { x: 0.45 * L, y: -0.02 * H },
+      ];
+    case 'azhdarch':
+      // Quetzalcoatlus: a huge, deep-based, dagger-like beak and a low crest over the eyes.
+      return [
+        { x: 0, y: 0 },
+        { x: (-0.1 - round * 0.05) * L, y: 0.5 * H },
+        { x: (0.0 - round * 0.03) * L, y: (1.0 + round * 0.1) * H },
+        { x: (0.14 - round * 0.04) * L, y: (1.2 + round * 0.05) * H },
+        { x: (0.3 - round * 0.06) * L, y: (0.98 + round * 0.1) * H },
+        { x: (0.62 - round * 0.1) * L, y: (0.58 + round * 0.2) * H },
+        { x: (1.02 - round * 0.1) * L, y: 0.06 * H },
+        { x: (0.84 - round * 0.08) * L, y: -0.02 * H },
+        { x: 0.45 * L, y: -0.02 * H },
+      ];
+    case 'parrot':
+      // Oviraptor: short and deep, ending in a strong hooked beak.
+      return [
+        { x: 0, y: 0 },
+        { x: (-0.14 - round * 0.04) * L, y: 0.5 * H },
+        { x: (0.0 - round * 0.03) * L, y: (0.96 + round * 0.06) * H },
+        { x: (0.3 - round * 0.05) * L, y: (1.04 + round * 0.06) * H },
+        { x: (0.64 - round * 0.08) * L, y: 0.95 * H },
+        { x: (0.9 - round * 0.08) * L, y: 0.68 * H },
+        { x: (1.02 - round * 0.06) * L, y: 0.28 * H },
+        { x: (0.96 - round * 0.05) * L, y: -0.14 * H },
+        { x: (0.84 - round * 0.05) * L, y: 0.02 * H },
+        { x: 0.45 * L, y: -0.02 * H },
+      ];
+    case 'long':
+      // Diplodocus: a long, low head with a rounded snout and nostrils high up.
+      return [
+        { x: 0, y: 0 },
+        { x: (-0.1 - round * 0.05) * L, y: 0.5 * H },
+        { x: (0.05 - round * 0.04) * L, y: (0.96 + round * 0.12) * H },
+        { x: (0.3 - round * 0.06) * L, y: (1.02 + round * 0.12) * H },
+        { x: (0.55 - round * 0.08) * L, y: (0.84 + round * 0.2) * H },
+        { x: (0.86 - round * 0.08) * L, y: (0.66 + round * 0.2) * H },
+        { x: (1.03 - round * 0.06) * L, y: 0.42 * H },
+        { x: (0.99 - round * 0.06) * L, y: 0.04 * H },
+        { x: 0.5 * L, y: -0.02 * H },
+      ];
+    case 'horse':
+      // Iguanodon: a long, horse-like face with a blunt beak.
+      return [
+        { x: 0, y: 0 },
+        { x: (-0.1 - round * 0.05) * L, y: 0.48 * H },
+        { x: (0.05 - round * 0.04) * L, y: (0.96 + round * 0.12) * H },
+        { x: (0.35 - round * 0.08) * L, y: (0.98 + round * 0.12) * H },
+        { x: (0.7 - round * 0.1) * L, y: (0.82 + round * 0.2) * H },
+        { x: (0.94 - round * 0.08) * L, y: (0.64 + round * 0.18) * H },
+        { x: (1.04 - round * 0.06) * L, y: 0.32 * H },
+        { x: (0.98 - round * 0.06) * L, y: 0.0 },
+        { x: 0.5 * L, y: -0.02 * H },
+      ];
     default:
       return [
         { x: 0, y: 0 },
@@ -340,6 +235,26 @@ function jawPoints(r: Rig, f: Features): V[] {
         { x: 0.5 * L, y: -D * 1.0 },
         { x: 0.08 * L, y: -D * 0.9 },
       ];
+    case 'ptero':
+    case 'azhdarch':
+      // A long, thin lower beak meeting the upper one at the tip.
+      return [
+        { x: -0.02 * L, y: 0.02 * D },
+        { x: 0.5 * L, y: 0 },
+        { x: 1.0 * L, y: 0 },
+        { x: 0.9 * L, y: -D * 0.3 },
+        { x: 0.5 * L, y: -D * 0.75 },
+        { x: 0.08 * L, y: -D * 0.9 },
+      ];
+    case 'parrot':
+      return [
+        { x: -0.02 * L, y: 0.02 * D },
+        { x: 0.5 * L, y: 0 },
+        { x: 0.84 * L, y: 0 },
+        { x: 0.8 * L, y: -D * 0.75 },
+        { x: 0.45 * L, y: -D * 1.1 },
+        { x: 0.06 * L, y: -D * 0.95 },
+      ];
     default:
       return [
         { x: -0.02 * L, y: 0.02 * D },
@@ -381,6 +296,13 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   const o = opts.outline / sc;
   const f = features;
   const grown = 1 - r.baby;
+  const display = clamp(r.pose.display, 0, 1);
+  // Winged species: four-legged ones (pterosaurs) fly with their arms; two-legged ones spread them.
+  const winged = !!f.wings;
+  const flying = winged && r.pose.fly > 0.4;
+  const spread = winged ? wingSpread(r) : 0;
+  const armWings = winged && !r.quad && (flying || spread > 0.2);
+  const handsUp = winged && r.quad && flying;
 
   if (opts.shadow) {
     const len = r.quad ? p.bodyLen + p.hipR + p.chestR : p.bodyLen + p.hipR * 2;
@@ -529,6 +451,10 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     outlineOf(lm.all);
     ctx.restore();
     fill(lm.all, color);
+    ctx.save();
+    ctx.clip(lm.all);
+    formShade(ctx, lm.all, bb, w * 0.3, 'rgba(28, 14, 48, 0.16)', 'rgba(255, 255, 255, 0.1)', -w * 0.22);
+    ctx.restore();
     // The muscle line: only on the lower part, fading into the body above the joint.
     ctx.save();
     ctx.clip(body);
@@ -543,28 +469,44 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   };
 
   // Far limbs, behind everything.
+  if (handsUp || armWings) drawWing(ctx, r, pal, o, false);
+  if (f.wings === 'feather') legFeathers(ctx, s.legs[1], r, pal, o, true);
   const farLeg = hindLeg(s.legs[1]);
   part(farLeg.all, pal.far);
   claws(farLeg.toes, s.legs[1].ball, p.legW);
   sickle(s.legs[1]);
-  if (s.fronts.length) {
+  if (s.fronts.length && !handsUp) {
+    if (winged) foldedWing(ctx, st, s.fronts[1], r, pal, o, true, spread);
     const fl = frontLeg(s.fronts[1]);
     part(fl.all, pal.far);
     claws(fl.toes, s.fronts[1].ball, p.fLegW);
+    if (f.thumbSpike) thumbSpike(ctx, s.fronts[1], r, pal, o, true);
   }
-  if (s.arms.length) {
+  if (s.arms.length && !armWings) {
     armFeathers(s.arms[1], darken(pal.accent, 0.2));
     const fa = arm(s.arms[1]);
     part(fa.all, pal.far);
-    claws(fa.toes, s.arms[1].hand, p.armW * 2.2);
+    if (f.scytheClaws) scytheClaws(ctx, s.arms[1], r, pal, o, true);
+    else claws(fa.toes, s.arms[1].hand, p.armW * 2.2);
   }
 
   // ---- features behind the body ----
-  if (f.sail) drawSail(ctx, pal, o, st, p, grown);
-  if (f.plates) {
-    drawPlates(ctx, pal, o, st, p, grown, true);
-    drawPlates(ctx, pal, o, st, p, grown, false);
+  if (f.neckFrill) neckFrill(ctx, r, pal, o, display);
+  if (f.sail) drawSail(ctx, pal, o, st, p, grown, display);
+  if (f.dorsalSpines) part(dorsalSpines(st, grown), mix(pal.accent, pal.body, 0.45));
+  if (f.neckSpines) {
+    neckSpines(ctx, st, pal, o, grown, true, display);
+    neckSpines(ctx, st, pal, o, grown, false, display);
   }
+  if (f.spikeRow) spikeRow(ctx, st, pal, o, grown, true);
+  if (f.plates) {
+    const from = f.spikeRow ? 0.4 : -6;
+    drawPlates(ctx, pal, o, st, p, grown, true, from);
+    drawPlates(ctx, pal, o, st, p, grown, false, from);
+  }
+  if (f.spikeRow) spikeRow(ctx, st, pal, o, grown, false);
+  if (f.shoulderSpikes) shoulderSpike(ctx, r, pal, o, true);
+  if (f.osteoderms) part(osteoRidge(st, grown), darken(pal.body, 0.12));
   if (f.finTail) drawFin(ctx, r, pal, o);
   if (f.thagomizer) drawThagomizer(ctx, r, pal, o, true);
   if (f.spikes) part(spikePath(st), pal.accent);
@@ -587,10 +529,23 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   }
 
   // ---- main silhouette: outline everything first, then fill, so the outline only shows outside ----
+  // Feathered coats (and every feathered baby's fluff) poke out of the outline as tufts.
+  const coat = f.featherCoat || (f.feathers && r.baby > 0.3) ? coatPaths(st, (f.featherCoat ? 1 : 0.55) * (1 + 0.6 * r.baby), display) : null;
   outlineOf(body);
+  heavyUnderline(ctx, body, o);
+  if (coat) {
+    outlineOf(coat.back);
+    outlineOf(coat.belly);
+  }
   outlineOf(skull);
+  heavyUnderline(ctx, skull, o);
   outlineOf(jaw);
+  heavyUnderline(ctx, jaw, o);
   if (mouth) outlineOf(mouth);
+  if (coat) {
+    fill(coat.back, pal.body);
+    fill(coat.belly, mix(pal.belly, pal.body, 0.3));
+  }
   fill(body, pal.body);
   if (mouth) fill(mouth, pal.mouth);
   if (open) {
@@ -607,7 +562,9 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   ctx.clip(body);
   bellyBand(ctx, st, pal);
   pattern(ctx, st, pal, o);
-  if (f.armor) scutes(ctx, st, pal, o);
+  if (f.armor || f.osteoderms) scutes(ctx, st, pal, o, !!f.osteoderms);
+  texture(ctx, f.featherCoat ? 'feathers' : 'scales', s.bounds, (f.featherCoat ? 2 : 2.4) + 1.6 * grown, 0.12);
+  formShade(ctx, body, s.bounds, 2 + p.hipR * 0.13, 'rgba(28, 14, 48, 0.15)', 'rgba(255, 255, 255, 0.12)');
   shade(ctx, s.bounds);
   // A soft sheen along the back.
   ctx.strokeStyle = lighten(pal.body, 0.35);
@@ -625,8 +582,12 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   ctx.restore();
 
   // Head crests and frills sit behind the skull but in front of the neck.
-  const behindHead = !!(f.frill || f.tubeCrest || f.twinCrests || f.browHorns);
-  if (f.frill) drawFrill(ctx, r, pal, o);
+  const behindHead = !!(f.frill || f.tubeCrest || f.twinCrests || f.browHorns || f.pteroCrest || f.helmetCrest || f.casque);
+  if (f.frillSpikes) frillSpikes(ctx, r, pal, o);
+  if (f.frill) drawFrill(ctx, r, pal, o, display);
+  if (f.pteroCrest) pteroCrest(ctx, r, pal, o);
+  if (f.helmetCrest) helmetCrest(ctx, r, pal, o);
+  if (f.casque) casque(ctx, r, pal, o);
   if (f.tubeCrest) drawTubeCrest(ctx, r, pal, o);
   if (f.twinCrests) {
     drawTwinCrest(ctx, r, pal, o, true);
@@ -655,8 +616,8 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   ctx.ellipse(...xy(at(s.headO, jawA, { x: L * 0.45, y: -p.jawD * 1.0 })), L * 0.5, p.jawD * 0.62, jawA, 0, Math.PI * 2);
   ctx.fill();
   // Beaks: a horny tip on the snout and the lower jaw.
-  if (f.beak || f.duckBill) {
-    const b0 = kind === 'cera' ? 0.74 : kind === 'duck' ? 0.8 : 0.76;
+  if (f.beak || f.duckBill || f.longBeak || f.parrotBeak) {
+    const b0 = kind === 'cera' ? 0.74 : kind === 'duck' ? 0.8 : kind === 'ptero' || kind === 'azhdarch' ? 0.42 : kind === 'parrot' ? 0.5 : 0.76;
     ctx.fillStyle = pal.horn;
     const bk = new Path2D();
     const q1 = at(s.headO, s.headA, { x: (b0 + 0.06) * L, y: H * 1.4 });
@@ -686,7 +647,10 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     ctx.fill();
     ctx.globalAlpha = 1;
   }
-  shade(ctx, { x1: s.bounds.x1, x2: s.bounds.x2, y1: Math.min(s.headO.y, s.top.y) - p.jawD * 1.5, y2: s.top.y + 2 });
+  const hb = { x1: s.bounds.x1, x2: s.bounds.x2, y1: Math.min(s.headO.y, s.top.y) - p.jawD * 1.5, y2: s.top.y + 2 };
+  texture(ctx, 'scales', hb, 1.6 + 0.8 * grown, 0.07);
+  formShade(ctx, headUnion, hb, 0.8 + H * 0.1, 'rgba(28, 14, 48, 0.13)', 'rgba(255, 255, 255, 0.12)');
+  shade(ctx, hb);
   ctx.restore();
 
   if (f.dome) {
@@ -730,12 +694,22 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     const smile = r.eyes === 'happy' ? 0.05 * H : 0;
     const a0 = at(s.headO, s.headA, { x: 0.3 * L, y: 0.08 * H + r.baby * 0.04 * H + smile });
     const a1 = at(s.headO, s.headA, { x: 0.62 * L, y: 0.01 * H - smile * 0.5 });
-    const a2 = at(s.headO, s.headA, { x: (kind === 'croc' ? 0.97 : 0.93) * L, y: 0.02 * H });
+    const a2 = at(s.headO, s.headA, { x: (kind === 'croc' || kind === 'ptero' || kind === 'azhdarch' ? 0.97 : 0.93) * L, y: 0.02 * H });
     m.moveTo(a0.x, a0.y);
     m.quadraticCurveTo(a1.x, a1.y, a2.x, a2.y);
     ctx.stroke(m);
   }
-  const noseAt = kind === 'croc' ? { x: 0.52, y: p.snoutH * 1.0 } : kind === 'duck' ? { x: 0.8, y: p.snoutH * 0.78 } : kind === 'sauro' ? { x: 0.84, y: p.snoutH * 0.95 } : { x: 0.9, y: p.snoutH * 0.78 };
+  const NOSE: Partial<Record<HeadKind, V>> = {
+    croc: { x: 0.52, y: p.snoutH * 1.0 },
+    duck: { x: 0.8, y: p.snoutH * 0.78 },
+    sauro: { x: 0.84, y: p.snoutH * 0.95 },
+    ptero: { x: 0.36, y: p.headH * 0.72 },
+    azhdarch: { x: 0.36, y: p.headH * 0.82 },
+    parrot: { x: 0.7, y: p.headH * 0.78 },
+    long: { x: 0.36, y: p.headH * 0.92 },
+    horse: { x: 0.9, y: p.snoutH * 0.72 },
+  };
+  const noseAt = NOSE[kind] ?? { x: 0.9, y: p.snoutH * 0.78 };
   const nose = at(s.headO, s.headA, { x: noseAt.x * L, y: noseAt.y });
   ctx.fillStyle = pal.outline;
   ctx.beginPath();
@@ -751,12 +725,14 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   }
 
   eye(ctx, r, pal, f, o);
+  if (f.lacrimal) lacrimalHorns(ctx, r, pal, o);
 
   if (f.crest || (f.feathers && !f.beak)) crest(ctx, r, pal, o);
   if (f.browHorns) browHorn(ctx, r, pal, o, false);
   if (f.noseHorn) {
     const nh = new Path2D();
-    horn(nh, at(s.headO, s.headA, { x: 0.8 * L, y: p.snoutH * 0.95 }), s.headA + 1.05, H * (0.12 + 0.32 * grown), L * (0.08 + 0.04 * grown), -0.15);
+    if (f.longNoseHorn) horn(nh, at(s.headO, s.headA, { x: 0.78 * L, y: p.snoutH * 0.95 }), s.headA + 0.98, H * (0.15 + 0.8 * grown), L * (0.09 + 0.05 * grown), -0.28);
+    else horn(nh, at(s.headO, s.headA, { x: 0.8 * L, y: p.snoutH * 0.95 }), s.headA + 1.05, H * (0.12 + 0.32 * grown), L * (0.08 + 0.04 * grown), -0.15);
     part(nh, pal.horn);
   }
   if (f.armor) {
@@ -768,6 +744,7 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   }
 
   // Near legs and arm on top, blending into the body.
+  if (f.wings === 'feather') legFeathers(ctx, s.legs[0], r, pal, o, false);
   const near = hindLeg(s.legs[0]);
   nearLimb(near, pal.body, s.legs[0].hip, p.legW);
   // A little highlight on the thigh.
@@ -781,22 +758,27 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   ctx.globalAlpha = 1;
   claws(near.toes, nl.ball, p.legW);
   sickle(nl);
-  if (s.fronts.length) {
+  if (s.fronts.length && !handsUp) {
+    if (winged) foldedWing(ctx, st, s.fronts[0], r, pal, o, false, spread);
     const fl = frontLeg(s.fronts[0]);
     nearLimb(fl, pal.body, s.fronts[0].hip, p.fLegW);
     claws(fl.toes, s.fronts[0].ball, p.fLegW);
+    if (f.thumbSpike) thumbSpike(ctx, s.fronts[0], r, pal, o, false);
   }
-  if (s.arms.length) {
+  if (f.shoulderSpikes) shoulderSpike(ctx, r, pal, o, false);
+  if (s.arms.length && !armWings) {
     armFeathers(s.arms[0], pal.accent);
     const na = arm(s.arms[0]);
     nearLimb(na, pal.body, s.arms[0].shoulder, p.armW);
-    claws(na.toes, s.arms[0].hand, p.armW * 2.2);
+    if (f.scytheClaws) scytheClaws(ctx, s.arms[0], r, pal, o, false);
+    else claws(na.toes, s.arms[0].hand, p.armW * 2.2);
   }
 
   // Tail ends.
   if (f.thagomizer) drawThagomizer(ctx, r, pal, o, false);
   if (f.club) drawClub(ctx, r, pal, o);
   if (f.feathers) tailFeathers(ctx, r, pal, o);
+  if (handsUp || armWings) drawWing(ctx, r, pal, o, true);
 
   ctx.restore();
 }
@@ -863,12 +845,6 @@ function teeth(ctx: Ctx, r: Rig, jawA: number, open: boolean) {
   }
   ctx.fill(path);
 }
-
-/** Deterministic pseudo-random 0..1 from an integer, for patterns that don't flicker. */
-const hash = (i: number) => {
-  const x = Math.sin(i * 127.1 + 311.7) * 43758.5453;
-  return x - Math.floor(x);
-};
 
 /** Body pattern over the back and flanks. Each kind is drawn as a single path, so it's cheap. */
 function pattern(ctx: Ctx, st: Station[], pal: Palette, o: number) {
@@ -1151,7 +1127,7 @@ function hornPath(r: Rig): Path2D {
 // ---------------- species features ----------------
 
 /** Spinosaurus sail: tall spines joined by skin, highest over the middle of the back. */
-function drawSail(ctx: Ctx, pal: Palette, o: number, st: Station[], p: BodyParams, grown: number) {
+function drawSail(ctx: Ctx, pal: Palette, o: number, st: Station[], p: BodyParams, grown: number, glow = 0) {
   const k = 0.3 + 0.7 * grown;
   const pts = st.filter((q) => q.k >= -2 && q.k <= 1);
   const n = pts.length;
@@ -1181,6 +1157,13 @@ function drawSail(ctx: Ctx, pal: Palette, o: number, st: Station[], p: BodyParam
   ctx.stroke(sail);
   ctx.fillStyle = pal.accent;
   ctx.fill(sail);
+  // Showing off: the sail flushes with colour.
+  if (glow > 0.02) {
+    ctx.fillStyle = lighten(pal.accent, 0.35);
+    ctx.globalAlpha = glow * 0.55;
+    ctx.fill(sail);
+    ctx.globalAlpha = 1;
+  }
   // Darker spines through the skin.
   ctx.strokeStyle = darken(pal.accent, 0.25);
   ctx.lineWidth = o * 0.9;
@@ -1194,9 +1177,9 @@ function drawSail(ctx: Ctx, pal: Palette, o: number, st: Station[], p: BodyParam
 }
 
 /** Stegosaurus plates: two alternating rows along the back, biggest over the hips. */
-function drawPlates(ctx: Ctx, pal: Palette, o: number, st: Station[], p: BodyParams, grown: number, far: boolean) {
+function drawPlates(ctx: Ctx, pal: Palette, o: number, st: Station[], p: BodyParams, grown: number, far: boolean, from = -6) {
   const k = 0.3 + 0.7 * grown;
-  const pts = st.filter((q) => q.k >= -6);
+  const pts = st.filter((q) => q.k >= from);
   const color = far ? darken(pal.accent, 0.2) : pal.accent;
   const plates = new Path2D();
   const glints = new Path2D();
@@ -1295,7 +1278,7 @@ function armorSpikes(st: Station[], grown: number): Path2D {
 }
 
 /** Ankylosaurus: bony plates (osteoderms) in rows over the back. */
-function scutes(ctx: Ctx, st: Station[], pal: Palette, o: number) {
+function scutes(ctx: Ctx, st: Station[], pal: Palette, o: number, croc = false) {
   const path = new Path2D();
   for (const q of st) {
     if (q.k < -6 || q.k > 1) continue;
@@ -1309,9 +1292,9 @@ function scutes(ctx: Ctx, st: Station[], pal: Palette, o: number) {
       path.ellipse(c.x, c.y, rr * 1.2, rr * 0.85, q.a, 0, Math.PI * 2);
     }
   }
-  ctx.fillStyle = mix(pal.accent, pal.body, 0.35);
+  ctx.fillStyle = croc ? darken(pal.body, 0.08) : mix(pal.accent, pal.body, 0.35);
   ctx.fill(path);
-  ctx.strokeStyle = darken(pal.body, 0.35);
+  ctx.strokeStyle = darken(pal.body, croc ? 0.25 : 0.35);
   ctx.lineWidth = o * 0.8;
   ctx.stroke(path);
 }
@@ -1341,11 +1324,11 @@ function drawFin(ctx: Ctx, r: Rig, pal: Palette, o: number) {
 }
 
 /** Ceratopsian frill: a big scalloped shield from the back of the skull. */
-function drawFrill(ctx: Ctx, r: Rig, pal: Palette, o: number) {
+function drawFrill(ctx: Ctx, r: Rig, pal: Palette, o: number, flare = 0) {
   const s = r.s;
   const L = r.p.headLen;
   const H = r.p.headH;
-  const k = 1 - 0.45 * r.baby;
+  const k = (1 - 0.45 * r.baby) * (1 + 0.15 * flare);
   const c = { x: 0.02 * L, y: 0.6 * H };
   const R1 = L * 0.5 * k;
   const R2 = H * 0.86 * k;
