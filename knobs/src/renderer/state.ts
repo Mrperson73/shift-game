@@ -183,11 +183,14 @@ function post(msg: object) {
 }
 
 let thumbTimer = 0;
+/** Number of times a game frame has booted (used by the smoke test). */
+export const readyCount = signal(0);
 window.addEventListener('message', (e) => {
   if (!frame || e.source !== frame.contentWindow) return;
   const m = e.data;
   if (!m || m.__knobs !== 1) return;
   if (m.type === 'ready') {
+    readyCount.value++;
     if (scale.value !== 1) post({ type: 'time', paused: false, scale: scale.value });
     paused.value = false;
     // Give the game the keyboard, unless the user is busy in the UI (palette, a text field, …).
@@ -514,3 +517,35 @@ api.on('reloaded', (p) => {
 api.on('opened', (p) => applyPayload(p));
 api.on('error', (m) => toast(m, 'error'));
 api.on('recents', (list) => (recents.value = list));
+
+// ---------------- smoke test (knobs --smoke-test) ----------------
+/** Open the demo, wait for it to boot, check its knobs and tune one: proves an installed build works. */
+export async function runSmoke() {
+  let done = false;
+  const report = (r: string) => {
+    if (done) return;
+    done = true;
+    api.smokeResult(r);
+  };
+  window.addEventListener('error', (e) => !/ResizeObserver/.test(e.message) && report(`FAIL UI error: ${e.message}`));
+  window.addEventListener('unhandledrejection', (e) => report(`FAIL UI rejection: ${String(e.reason)}`));
+  try {
+    await openDemo();
+    if (!game.value) return report('FAIL could not open the demo game');
+    const t0 = performance.now();
+    while (!readyCount.value) {
+      if (performance.now() - t0 > 30_000) return report('FAIL the demo game never started');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const gravity = knobs.value.find((k) => k.label === 'GRAVITY');
+    if (knobs.value.length < 10 || !gravity) return report(`FAIL expected the demo's knobs, found ${knobs.value.length}`);
+    setKnob(gravity.id, 1234);
+    flushMain();
+    await new Promise((r) => setTimeout(r, 1500));
+    const err = logs.value.find((l) => l.level === 'error');
+    if (err) return report(`FAIL the demo game reported an error: ${err.text}`);
+    report(`OK knobs=${knobs.value.length}`);
+  } catch (e) {
+    report(`FAIL ${String((e as Error)?.message ?? e)}`);
+  }
+}

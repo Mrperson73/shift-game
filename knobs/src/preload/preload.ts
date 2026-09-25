@@ -32,6 +32,7 @@ const api: KnobsApi = {
   toggleDevTools: () => send('win:devtools'),
   setFullscreen: (on) => send('win:fullscreen', on),
   pathForFile: (file) => webUtils.getPathForFile(file),
+  smokeResult: (result) => send('smoke:result', result),
   on: ((channel: string, cb: (p: unknown) => void) => {
     const listener = (_e: unknown, p: unknown) => cb(p);
     ipcRenderer.on(channel, listener);

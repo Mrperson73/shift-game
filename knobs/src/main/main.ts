@@ -10,7 +10,18 @@ import { Snapshots } from './snapshots';
 import { GameSession, type Host, safeJoin, type SessionDeps } from './session';
 import { mimeOf, serveGame } from './serve';
 
+/** `--smoke-test`: start, open the demo game in a hidden window, verify it runs, then exit 0/1. Used by CI on the installed app. */
+const SMOKE = process.argv.includes('--smoke-test');
+// A private per-user folder (not the shared temp dir). Chromium keeps writing to userData while it
+// shuts down, so each smoke test wipes this fixed folder on start instead of deleting it on exit.
+const smokeDir = path.join(app.getPath('userData'), 'smoke-test');
+if (SMOKE) {
+  try {
+    fs.rmSync(smokeDir, { recursive: true, force: true });
+  } catch { /* a previous run may still be exiting; reusing its folder is harmless */ }
+}
 if (process.env.KNOBS_USER_DATA) app.setPath('userData', process.env.KNOBS_USER_DATA);
+else if (SMOKE) app.setPath('userData', path.join(smokeDir, 'user'));
 
 const UI_ORIGIN = 'knobs-app://ui';
 protocol.registerSchemesAsPrivileged([
@@ -23,7 +34,7 @@ const RENDERER = path.join(DIST, 'renderer');
 const DEMO = app.isPackaged ? path.join(process.resourcesPath, 'demo') : path.join(DIST, '..', 'resources', 'demo');
 const USER = app.getPath('userData');
 const THUMBS = path.join(USER, 'thumbs');
-const GAMES_DIR = process.env.KNOBS_GAMES_DIR || path.join(app.getPath('documents'), 'Knobs');
+const GAMES_DIR = process.env.KNOBS_GAMES_DIR || (SMOKE ? path.join(smokeDir, 'games') : path.join(app.getPath('documents'), 'Knobs'));
 
 const store = new Store(path.join(USER, 'state.json'));
 const snapshots = new Snapshots(path.join(USER, 'versions'));
@@ -131,8 +142,9 @@ function on<A extends unknown[]>(channel: string, fn: (...args: A) => void) {
 function registerIpc() {
   handle('app:init', (): InitInfo => ({
     recents: recents(), settings: store.data.settings, platform: process.platform, version: app.getVersion(),
-    gamesDir: GAMES_DIR, openAtStart: pathArg(process.argv),
+    gamesDir: GAMES_DIR, openAtStart: SMOKE ? null : pathArg(process.argv), smoke: SMOKE,
   }));
+  on('smoke:result', (result: string) => finishSmoke(String(result)));
   handle('game:open', (p: string) => openGame(String(p)));
   handle('game:openDialog', async (kind: 'file' | 'folder') => {
     const r = await dialog.showOpenDialog(win!, {
@@ -276,6 +288,18 @@ function registerIpc() {
   on('win:fullscreen', (on: boolean) => win?.setFullScreen(!!on));
 }
 
+let smokeDone = false;
+function finishSmoke(result: string) {
+  if (!SMOKE || smokeDone) return;
+  smokeDone = true;
+  const line = `KNOBS_SMOKE ${result}`;
+  console.log(line);
+  if (process.env.KNOBS_SMOKE_OUT) {
+    try { fs.writeFileSync(process.env.KNOBS_SMOKE_OUT, line + '\n'); } catch { /* best effort */ }
+  }
+  app.exit(result.startsWith('OK') ? 0 : 1);
+}
+
 // ---------------- window ----------------
 
 function shortcutFor(input: Electron.Input): Shortcut | 'devtools' | null {
@@ -329,7 +353,7 @@ function createWindow() {
     },
   });
   if (saved?.maximized) win.maximize();
-  win.once('ready-to-show', () => win?.show());
+  win.once('ready-to-show', () => !SMOKE && win?.show());
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type !== 'keyDown') return;
     const s = shortcutFor(input);
@@ -393,7 +417,12 @@ function hardenSessions() {
   });
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (SMOKE) {
+  process.on('uncaughtException', (e) => finishSmoke(`FAIL main process: ${e.message}`));
+  setTimeout(() => finishSmoke('FAIL timed out after 60s'), 60_000);
+}
+
+if (!SMOKE && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', (_e, argv) => {

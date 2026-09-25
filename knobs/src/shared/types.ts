@@ -70,6 +70,7 @@ export interface InitInfo {
   version: string;
   gamesDir: string;
   openAtStart: string | null;
+  smoke: boolean;
 }
 
 export type Shortcut = 'help' | 'restart' | 'pause' | 'step' | 'slower' | 'faster' | 'focus' | 'palette';
@@ -104,6 +105,7 @@ export interface KnobsApi {
   toggleDevTools(): void;
   setFullscreen(on: boolean): void;
   pathForFile(file: File): string;
+  smokeResult(result: string): void;
   on(channel: 'reloaded' | 'opened', cb: (p: GamePayload) => void): () => void;
   on(channel: 'shortcut', cb: (s: Shortcut) => void): () => void;
   on(channel: 'error', cb: (message: string) => void): () => void;

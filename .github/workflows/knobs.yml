@@ -41,6 +41,10 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write # build provenance attestation
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,19 +53,94 @@ jobs:
           cache: npm
           cache-dependency-path: knobs/package-lock.json
       - run: npm ci
+
+      # Code signing turns on automatically once the WIN_CSC_LINK (base64 .pfx) and
+      # WIN_CSC_KEY_PASSWORD repository secrets exist. Without them the build is unsigned.
       - name: Build Windows installer + portable zip
         if: runner.os == 'Windows'
-        run: npm run dist:win
+        shell: pwsh
+        env:
+          SIGN_CERT: ${{ secrets.WIN_CSC_LINK }}
+          SIGN_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if ($env:SIGN_CERT) { $env:CSC_LINK = $env:SIGN_CERT; $env:CSC_KEY_PASSWORD = $env:SIGN_PASSWORD }
+          else { $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false' }
+          npm run dist:win
+
+      - name: Install, launch and uninstall on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Get-ChildItem release/Knobs-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exited with $($p.ExitCode)" }
+          $dir = "$env:LOCALAPPDATA\Programs\knobs"
+          $exe = "$dir\Knobs.exe"
+          if (-not (Test-Path $exe)) { throw "Knobs.exe not found in $dir" }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Knobs.lnk")) { throw 'Start menu shortcut missing' }
+
+          $env:KNOBS_SMOKE_OUT = "$env:RUNNER_TEMP\knobs-smoke.txt"
+          $p = Start-Process $exe -ArgumentList '--smoke-test' -Wait -PassThru
+          if (Test-Path $env:KNOBS_SMOKE_OUT) { Get-Content $env:KNOBS_SMOKE_OUT }
+          if ($p.ExitCode -ne 0) { throw "installed app failed its smoke test (exit $($p.ExitCode))" }
+
+          Start-Process "$dir\Uninstall Knobs.exe" -ArgumentList '/S' -Wait
+          # The NSIS uninstaller re-launches itself from %TEMP%, so wait for the files to go.
+          for ($i = 0; $i -lt 60 -and (Test-Path $exe); $i++) { Start-Sleep -Milliseconds 500 }
+          if (Test-Path $exe) { throw 'uninstaller left Knobs.exe behind' }
+          'install -> launch -> uninstall OK'
+
       - name: Build Linux AppImage
         if: runner.os == 'Linux'
         run: npm run dist:linux
-      - uses: actions/upload-artifact@v4
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd release
+          sha256sum *.exe *.zip *.AppImage 2>/dev/null > "SHA256SUMS-${RUNNER_OS}.txt" || true
+          cat "SHA256SUMS-${RUNNER_OS}.txt"
+          test -s "SHA256SUMS-${RUNNER_OS}.txt"
+
+      # Signed record that these files were built by this workflow from this commit.
+      # Verify with: gh attestation verify <file> -R Mrperson73/shift-game
+      - uses: actions/attest-build-provenance@v2
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && runner.os == 'Windows'
         with:
-          name: knobs-${{ runner.os }}
+          subject-path: |
+            knobs/release/Knobs-Setup-*.exe
+            knobs/release/Knobs-Portable-*.zip
+      - uses: actions/attest-build-provenance@v2
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && runner.os == 'Linux'
+        with:
+          subject-path: knobs/release/*.AppImage
+
+      # One artifact per download so nothing ends up zipped inside another zip.
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: Knobs-Setup-Windows
           path: |
-            knobs/release/*.exe
-            knobs/release/*.zip
+            knobs/release/Knobs-Setup-*.exe
+            knobs/release/SHA256SUMS-*.txt
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: Knobs-Portable-Windows
+          path: knobs/release/Knobs-Portable-*.zip
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: Knobs-Linux
+          path: |
             knobs/release/*.AppImage
+            knobs/release/SHA256SUMS-*.txt
+          compression-level: 0
           if-no-files-found: error
 
   release:
@@ -83,4 +162,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" artifacts/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "Knobs ${GITHUB_REF_NAME#knobs-v}" \
-            --notes "Windows - run the Setup .exe, or unzip the portable build. Linux - chmod +x the AppImage."
+            --notes "Windows: download Knobs-Setup and double-click it. It installs for your user only (no admin prompt) and opens Knobs when done. Portable: unzip Knobs-Portable and run Knobs.exe. Linux: chmod +x the AppImage. Checksums are in SHA256SUMS-*.txt."

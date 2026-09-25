@@ -11,6 +11,7 @@ S.api
     S.settings.value = i.settings;
     S.recents.value = i.recents;
     document.body.classList.add(`platform-${i.platform}`);
-    if (i.openAtStart) S.openPath(i.openAtStart);
+    if (i.smoke) S.runSmoke();
+    else if (i.openAtStart) S.openPath(i.openAtStart);
   })
   .catch(S.fail);

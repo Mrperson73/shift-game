@@ -22,9 +22,20 @@ It runs fully offline. No account, no API keys, no telemetry.
 
 ## Install (Windows)
 
-1. Download the latest build from the repository's **Releases** page, or from the **Actions** tab: open the latest *Knobs* run and download the `knobs-Windows` artifact.
-2. Run `Knobs-Setup-x.y.z.exe`. It installs per-user and doesn't need admin. Or unzip `Knobs-x.y.z-win-x64.zip` anywhere and run `Knobs.exe`.
-3. The app isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
+1. Download `Knobs-Setup-x.y.z.exe` from the repository's **Releases** page. Or open the latest *Knobs* run in the **Actions** tab, download **Knobs-Setup-Windows** and unzip it.
+2. Double-click `Knobs-Setup-x.y.z.exe`. There are no questions and no admin prompt. It installs for your Windows user only (in `%LOCALAPPDATA%\Programs\knobs`), adds Start menu and desktop shortcuts, and opens Knobs when it's done.
+3. Knobs isn't code-signed, so SmartScreen may say *"Windows protected your PC"* about the installer. Click **More info → Run anyway**. Every unsigned app gets this. The installed app opens normally afterwards.
+
+To uninstall, go to **Settings → Apps → Installed apps → Knobs**. Your games in `Documents\Knobs` are kept.
+
+**Portable version:** download **Knobs-Portable-Windows**, extract the whole zip to a folder, and run `Knobs.exe` from that folder. Don't run it from inside the zip: Windows then extracts only the .exe, without the files it needs.
+
+### Is the download safe?
+
+- **Tested before publishing.** CI installs every Windows build on a clean machine, starts it with `Knobs.exe --smoke-test`, and uninstalls it. The smoke test opens the demo game in a hidden window, checks that it runs and that knobs work, then quits. A build that fails any step isn't uploaded.
+- **Checksums.** Each download includes `SHA256SUMS-*.txt`. In PowerShell, `Get-FileHash .\Knobs-Setup-1.0.0.exe` should print the same hash (case doesn't matter).
+- **Provenance.** Builds have a signed [build provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations). It proves the file was built by this repository's workflow from a specific commit. To check it: `gh attestation verify Knobs-Setup-1.0.0.exe -R Mrperson73/shift-game`.
+- **Code signing (optional).** Add a code-signing certificate as the repository secrets `WIN_CSC_LINK` (the base64-encoded `.pfx`) and `WIN_CSC_KEY_PASSWORD`, and builds are signed automatically. A signed installer shows your name instead of *Unknown publisher*. SmartScreen can still warn until the certificate has built up a download reputation.
 
 Linux builds are published as an AppImage. macOS can be built from source.
 
@@ -91,8 +102,8 @@ npm run dev          # build and launch
 npm test             # unit tests (instrumenter, bake, colors, reports)
 npm run test:e2e     # end-to-end tests: drives the real Electron app with Playwright
 npm run typecheck
-npm run dist:win     # Windows NSIS installer + portable zip   → release/
-npm run dist:linux   # Linux AppImage                           → release/
+npm run dist:win     # Windows one-click installer + portable zip → release/
+npm run dist:linux   # Linux AppImage                             → release/
 ```
 
 On Linux, the end-to-end tests need a display: `xvfb-run -a npm run test:e2e`. Building the Windows *installer* on Linux needs Wine; the portable zip doesn't. CI (`.github/workflows/knobs.yml`) runs every test and builds the Windows installer, zip and AppImage on each push. Pushing a `knobs-v*` tag publishes them as a GitHub release.

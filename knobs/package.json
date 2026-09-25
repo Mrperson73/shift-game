@@ -72,15 +72,20 @@
           ]
         }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "Knobs-Portable-${version}-win-${arch}.${ext}"
     },
     "nsis": {
-      "oneClick": false,
+      "oneClick": true,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+      "allowElevation": false,
+      "packElevateHelper": false,
+      "runAfterFinish": true,
       "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
       "shortcutName": "Knobs",
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "uninstallDisplayName": "Knobs",
+      "artifactName": "Knobs-Setup-${version}.${ext}"
     },
     "linux": {
       "target": [
@@ -96,7 +101,8 @@
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png"
     },
-    "publish": null
+    "publish": null,
+    "compression": "maximum"
   },
   "repository": {
     "type": "git",
