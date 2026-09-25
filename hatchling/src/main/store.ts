@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { THEME_IDS } from '../shared/themes';
-import { type CustomColors, DEFAULT_SETTINGS, type PastPet, PATTERN_KINDS, type PetData, type Settings } from '../shared/types';
+import { type CustomColors, DEFAULT_SETTINGS, GROWTH_SPEEDS, type PastPet, PATTERN_KINDS, type PetData, type Settings } from '../shared/types';
 
 export type { PastPet } from '../shared/types';
 
@@ -106,6 +106,9 @@ export function sanitizeSettings(raw: unknown, base: Settings = DEFAULT_SETTINGS
     activity: oneOf(s.activity, ['calm', 'normal', 'lively'] as const, base.activity),
     gameReactions: bool('gameReactions'),
     theme: oneOf(s.theme, THEME_IDS, base.theme),
+    growthSpeed: GROWTH_SPEEDS.find((g) => g === s.growthSpeed) ?? base.growthSpeed,
+    videoReactions: bool('videoReactions'),
+    power: oneOf(s.power, ['saver', 'balanced', 'smooth'] as const, base.power),
   };
 }
 

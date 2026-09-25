@@ -560,6 +560,12 @@ async function main() {
       }
       case 'trick':
         return pet.trick(c.name);
+      case 'treat':
+        return pet.treat();
+      case 'toy':
+        return pet.toy(c.toy);
+      case 'special':
+        return pet.special();
       case 'flush':
         return save();
     }

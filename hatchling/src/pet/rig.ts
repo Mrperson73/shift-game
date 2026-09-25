@@ -52,9 +52,15 @@ export interface Pose {
   wiggle: number;
   /** 0..1 pawing the ground with the near hind foot. */
   paw: number;
+  /** 0..1 showing off: frills and crests flare, sails flush, feathers puff up. */
+  display: number;
+  /** 0..1 flying posture: body level, legs tucked back, wings (if any) spread. */
+  fly: number;
+  /** Wing stroke while flying: -1 wings down .. 1 wings up. */
+  flap: number;
 }
 
-export const NEUTRAL: Pose = { hipDrop: 0, pitch: 0, neck: 0, head: 0, jaw: 0, tailLift: 0, tailCurl: 0, tailWag: 0, arms: 0, tremble: 0, crouch: 0, stretch: 0, abs: 0, neckAbs: 0, headAbs: 0, tilt: 0, dance: 0, shake: 0, wiggle: 0, paw: 0 };
+export const NEUTRAL: Pose = { hipDrop: 0, pitch: 0, neck: 0, head: 0, jaw: 0, tailLift: 0, tailCurl: 0, tailWag: 0, arms: 0, tremble: 0, crouch: 0, stretch: 0, abs: 0, neckAbs: 0, headAbs: 0, tilt: 0, dance: 0, shake: 0, wiggle: 0, paw: 0, display: 0, fly: 0, flap: 0 };
 
 export interface LegOut {
   hip: V;

@@ -299,7 +299,7 @@ function pollActivity() {
       log(`processes: ${(e as Error).message}`);
     }
   }
-  const a: Activity = { idle, locked: locked || state === 'locked', game };
+  const a: Activity = { idle, locked: locked || state === 'locked', game, video: null };
   sendOverlay('activity', a);
 }
 

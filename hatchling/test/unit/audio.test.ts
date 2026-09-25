@@ -54,6 +54,19 @@ const MAX: Record<SoundName, number> = {
   whoosh: 0.8,
   pop: 0.3,
   sniff: 0.8,
+  flap: 0.8,
+  splash: 0.3,
+  bonk: 0.6,
+  swish: 0.8,
+  whip: 0.4,
+  dig: 0.8,
+  stomp: 0.6,
+  toy: 0.5,
+  bubble: 0.3,
+  chew: 0.4,
+  rustle: 0.8,
+  magic: 3,
+  snort: 0.8,
 };
 const UI_MAX: Record<UiSound, number> = { click: 0.1, toggle: 0.25, tab: 0.2, select: 0.6, hatch: 1.2, open: 1, error: 0.4, coin: 0.8 };
 

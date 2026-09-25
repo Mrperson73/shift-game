@@ -53,6 +53,11 @@ export interface PetData {
 export type SizeSetting = 'S' | 'M' | 'L';
 export type SpeechSetting = 'off' | 'emotes' | 'chatty';
 export type ActivitySetting = 'calm' | 'normal' | 'lively';
+/** How many times faster than normal a pet grows (normal: about 60 active hours to adult). */
+export type GrowthSpeed = 1 | 2 | 5 | 10;
+export const GROWTH_SPEEDS: GrowthSpeed[] = [1, 2, 5, 10];
+/** Frame rate budget: 'saver' halves most frame rates, 'smooth' keeps everything at 60 fps. */
+export type PowerSetting = 'saver' | 'balanced' | 'smooth';
 
 export interface Settings {
   size: SizeSetting;
@@ -72,6 +77,12 @@ export interface Settings {
   gameReactions: boolean;
   /** Colour theme of the panel window. */
   theme: ThemeId;
+  /** React to videos you watch (YouTube, Twitch, Netflix, video players...). */
+  videoReactions: boolean;
+  /** Growth speed multiplier. */
+  growthSpeed: GrowthSpeed;
+  /** Smoothness versus power use. */
+  power: PowerSetting;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -86,6 +97,9 @@ export const DEFAULT_SETTINGS: Settings = {
   activity: 'normal',
   gameReactions: true,
   theme: 'auto',
+  videoReactions: true,
+  growthSpeed: 1,
+  power: 'balanced',
 };
 
 export const SIZE_SCALE: Record<SizeSetting, number> = { S: 0.8, M: 1.1, L: 1.5 };
@@ -154,8 +168,10 @@ export interface Activity {
   /** Seconds since your last keyboard/mouse input. */
   idle: number;
   locked: boolean;
-  /** A known game that's running, e.g. "The Isle", or null. */
+  /** A game that's running, e.g. "The Isle", or null. */
   game: string | null;
+  /** A video you're watching (a video site in the browser or a video player), or null. */
+  video?: { site: string; title: string } | null;
 }
 
 /** A species as sent to renderers (mods included). */
@@ -182,11 +198,21 @@ export type Command =
   | { type: 'recolor'; variant: number; colors: CustomColors | null }
   /** Ask the pet to do a trick right now. */
   | { type: 'trick'; name: TrickName }
+  /** A growth treat: a golden snack that makes it grow a bit right away. */
+  | { type: 'treat' }
+  /** Put a toy out to play with. */
+  | { type: 'toy'; toy: ToyKind }
+  /** Its species' signature move (stomp, head-butt, tail swipe, fly...). */
+  | { type: 'special' }
   /** Save right away (the app is about to quit). */
   | { type: 'flush' };
 
-export type TrickName = 'dance' | 'roar' | 'spin' | 'sit' | 'shake';
-export const TRICKS: TrickName[] = ['dance', 'roar', 'spin', 'sit', 'shake'];
+export type TrickName = 'dance' | 'roar' | 'spin' | 'sit' | 'shake' | 'jump' | 'bow' | 'playdead';
+export const TRICKS: TrickName[] = ['dance', 'roar', 'spin', 'sit', 'shake', 'jump', 'bow', 'playdead'];
+
+/** Toys you can put out ('ball' is the same as the play command). */
+export type ToyKind = 'ball' | 'bubbles' | 'bone' | 'duck' | 'laser' | 'puddle';
+export const TOYS: ToyKind[] = ['ball', 'bubbles', 'bone', 'duck', 'laser', 'puddle'];
 
 export interface OverlayInit {
   pet: PetData;

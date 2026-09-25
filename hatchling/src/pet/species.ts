@@ -95,7 +95,26 @@ export interface Features {
   finTail?: boolean;
   /** A tall arch over the nose (Brachiosaurus). */
   nasalArch?: boolean;
+  /** Wings: skin membranes (pterosaurs) or feathers (Microraptor). Winged species can fly. */
+  wings?: 'membrane' | 'feather';
 }
+
+/** A species' signature moves (what the Special button and its own idle behaviour do). */
+export type SignatureMove =
+  | 'stomp' // big theropods: stomp and roar, a dust ring
+  | 'headbutt' // dome heads: charge and bonk a wall or the screen edge
+  | 'tailSwipe' // stegosaurs, ankylosaurs: swing the tail weapon
+  | 'charge' // ceratopsians: head down, charge a short way, skid
+  | 'fish' // Spinosaurus, Baryonyx, pterosaurs: fish in a puddle
+  | 'honk' // crested hadrosaurs: a big honk with sound rings
+  | 'display' // frills, sails, crests: show off (Pose.display)
+  | 'browse' // long necks: reach up and eat leaves
+  | 'dig' // scratch the ground, sometimes finds something
+  | 'screech' // small theropods: head back, screech
+  | 'fly' // winged species: take off and fly across the screen
+  | 'rake' // Therizinosaurus: slash with the huge claws
+  | 'whip' // Diplodocus: crack the tail like a whip
+  | 'curl'; // Ankylosaurus: hunker down in its armour
 
 /** What it likes to eat when you feed it. */
 export type Food = 'meat' | 'fish' | 'leaf' | 'berry';
@@ -153,8 +172,29 @@ export interface SpeciesDef {
   shiny: Variant;
   voice: Voice;
   lines: Partial<Record<LineEvent, string[]>>;
+  /** Signature moves; derived from its features when not given (see movesOf). */
+  moves?: SignatureMove[];
   /** Set for species loaded from the mods folder. */
   mod?: string;
+}
+
+/** A species' signature moves: its own list, or ones that fit its features. */
+export function movesOf(sp: SpeciesDef): SignatureMove[] {
+  if (sp.moves?.length) return sp.moves;
+  const f = sp.features;
+  const out: SignatureMove[] = [];
+  if (f.wings) out.push('fly');
+  if (f.dome) out.push('headbutt');
+  if (f.thagomizer || f.club) out.push('tailSwipe');
+  if (f.frill || f.browHorns || f.noseHorn) out.push('charge');
+  if (f.crocSnout) out.push('fish');
+  if (f.tubeCrest) out.push('honk');
+  if (f.sail || f.twinCrests) out.push('display');
+  if (sp.stance === 'quad' && sp.body.neckLen > 40) out.push('browse');
+  if (f.teeth && sp.body.hipHeight >= 40) out.push('stomp');
+  if (f.sickleClaw) out.push('screech');
+  if (!out.length) out.push(sp.diet === 'carnivore' ? 'screech' : 'dig');
+  return out;
 }
 
 const BABY_COMMON: Partial<Record<BodyKey, number>> = {
@@ -1191,8 +1231,13 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
     if (!m.features || typeof m.features !== 'object') throw new ModError('"features" must be an object of true/false');
     for (const [k, v] of Object.entries(m.features as Record<string, unknown>)) {
       if (!FEATURE_KEYS.includes(k as keyof Features)) throw new ModError(`Unknown feature "${k}". Known: ${FEATURE_KEYS.join(', ')}`);
+      if (k === 'wings') {
+        if (v !== false && v !== 'membrane' && v !== 'feather') throw new ModError('Feature "wings" must be "membrane", "feather" or false');
+        features.wings = v || undefined;
+        continue;
+      }
       if (typeof v !== 'boolean') throw new ModError(`Feature "${k}" must be true or false`);
-      features[k as keyof Features] = v;
+      (features as Record<string, boolean>)[k] = v;
     }
   }
 

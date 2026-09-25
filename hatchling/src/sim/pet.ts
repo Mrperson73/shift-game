@@ -6,7 +6,7 @@ import { clamp, type V } from '../pet/math';
 import { applyPose, type PoseName } from '../pet/poses';
 import { Rig } from '../pet/rig';
 import type { Food as FoodKind, LineEvent, SpeciesDef } from '../pet/species';
-import { type Activity, type PetData, type Platform, type Settings, SIZE_SCALE, type TrickName, type Wall } from '../shared/types';
+import { type Activity, type PetData, type Platform, type Settings, SIZE_SCALE, type ToyKind, type TrickName, type Wall } from '../shared/types';
 import { type Abilities, GROUND, ground, landingOn, ride, rideWall, route, usable, wallFoot, type World } from './world';
 
 export type EmoteKind = 'heart' | 'hearts' | 'zzz' | 'exclaim' | 'question' | 'note' | 'anger' | 'sweat' | 'stars' | 'food' | 'sparkle';
@@ -101,6 +101,22 @@ export type Act =
   | { k: 'stretch'; t: number }
   | { k: 'gaze'; t: number; dur: number }
   | { k: 'follow'; t: number };
+
+/** Another pet on the same screen (for playing together); the overlay updates these every frame. */
+export interface Friend {
+  id: string;
+  species: string;
+  x: number;
+  y: number;
+  /** Height in px. */
+  h: number;
+  facing: number;
+  act: string;
+  asleep: boolean;
+}
+
+/** What a screen edge is: a wall it can climb, or the way to the next monitor. */
+export type EdgeKind = 'wall' | 'exit';
 
 export interface Env {
   rand: () => number;
@@ -261,6 +277,30 @@ export class Pet {
   }
 
   // ---------------- input from the overlay ----------------
+
+  /** Other pets on this screen. */
+  friends: Friend[] = [];
+  /** The left and right screen edges. */
+  edges: { left: EdgeKind; right: EdgeKind } = { left: 'wall', right: 'wall' };
+
+  setFriends(f: Friend[]) {
+    this.friends = f;
+  }
+
+  setEdges(left: EdgeKind, right: EdgeKind) {
+    this.edges = { left, right };
+  }
+
+  /** A growth treat from the panel. */
+  treat() {}
+
+  /** A toy put out from the panel. */
+  toy(kind: ToyKind) {
+    if (kind === 'ball') this.play();
+  }
+
+  /** Its signature move, asked for from the panel. */
+  special() {}
 
   setWorld(width: number, height: number, platforms: Platform[], walls: Wall[] = []) {
     this.world = { width, height, platforms: platforms.some((p) => p.id === GROUND) ? platforms : [...platforms, ground(width, height)], walls };
@@ -658,7 +698,7 @@ export class Pet {
     const d = this.data;
     const active = !this.locked && this.userIdle < 60;
     if (!this.hatched) return;
-    if (active) d.activeSeconds += dt;
+    if (active) d.activeSeconds += dt * (this.settings.growthSpeed || 1);
     const night = this.isNight();
     if (this.act.k === 'sleep') d.energy += dt / (14 * 60);
     else d.energy -= (dt / ((55 + 70 * this.species.personality.stamina) * 60)) * (night ? 1.5 : 1) * (this.hidden ? 0.5 : 1);

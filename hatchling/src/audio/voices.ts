@@ -270,6 +270,12 @@ const KIND_DB: Record<VoiceKind, readonly [number, number]> = {
   bellow: [0.5, -0.8],
   honk: [4.1, 5.1],
   trill: [-3.8, -2.2],
+  // Placeholders until these kinds get their own designs.
+  chitter: [-3.8, -2.2],
+  croak: [6.3, 4.8],
+  rumble: [0.5, -0.8],
+  grunt: [0.5, -0.8],
+  coo: [-8, -9.3],
 };
 
 /** The voice for one play, with a little random variation (`vary` is the pitch spread). */
@@ -413,6 +419,11 @@ const MOUTH: Record<VoiceKind, readonly [Vowel, Vowel]> = {
   bellow: ['m', 'o'],
   honk: ['o', 'a'],
   trill: ['e', 'i'],
+  chitter: ['e', 'i'],
+  croak: ['a', 'o'],
+  rumble: ['m', 'o'],
+  grunt: ['o', 'u'],
+  coo: ['u', 'u'],
 };
 
 // ---------------- extra layers ----------------
@@ -946,6 +957,19 @@ const TRIM: Record<SoundName, number> = {
   whoosh: -2.1,
   pop: 2.4,
   sniff: -1.9,
+  flap: -2.1,
+  splash: 2.4,
+  bonk: 1.3,
+  swish: -2.1,
+  whip: 1.3,
+  dig: -1.9,
+  stomp: 1.3,
+  toy: -0.1,
+  bubble: 2.4,
+  chew: 1.2,
+  rustle: -1.9,
+  magic: -0.8,
+  snort: -1.9,
 };
 
 /** Reverb send per sound (bigger for adults' big calls). */
@@ -993,6 +1017,20 @@ const RECIPES: Record<SoundName, (p: Patch, w: Who, voice: Voice) => void> = {
   whoosh,
   pop: (p) => pop(p),
   sniff,
+  // Placeholders until these get their own designs.
+  flap: whoosh,
+  splash: (p) => pop(p),
+  bonk: thud,
+  swish: whoosh,
+  whip: (p) => crack(p),
+  dig: sniff,
+  stomp: thud,
+  toy: squeak,
+  bubble: (p) => pop(p),
+  chew: crunch,
+  rustle: sniff,
+  magic: grow,
+  snort: sniff,
 };
 
 /** Builds pet sound `name` for `voice` at `growth` (0 hatchling .. 1 adult) into the patch, `level` times its trim. */
