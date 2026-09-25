@@ -37,7 +37,7 @@ To uninstall, go to **Settings → Apps → Installed apps → Knobs**. Your gam
 - **Provenance.** Builds have a signed [build provenance attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations). It proves the file was built by this repository's workflow from a specific commit. To check it: `gh attestation verify Knobs-Setup-1.0.0.exe -R Mrperson73/shift-game`.
 - **Code signing (optional).** Add a code-signing certificate as the repository secrets `WIN_CSC_LINK` (the base64-encoded `.pfx`) and `WIN_CSC_KEY_PASSWORD`, and builds are signed automatically. A signed installer shows your name instead of *Unknown publisher*. SmartScreen can still warn until the certificate has built up a download reputation.
 
-Linux builds are published as an AppImage. macOS can be built from source.
+Releases are for Windows. macOS can be built from source.
 
 ## Quick start
 
@@ -103,10 +103,9 @@ npm test             # unit tests (instrumenter, bake, colors, reports)
 npm run test:e2e     # end-to-end tests: drives the real Electron app with Playwright
 npm run typecheck
 npm run dist:win     # Windows one-click installer + portable zip → release/
-npm run dist:linux   # Linux AppImage                             → release/
 ```
 
-On Linux, the end-to-end tests need a display: `xvfb-run -a npm run test:e2e`. Building the Windows *installer* on Linux needs Wine; the portable zip doesn't. CI (`.github/workflows/knobs.yml`) runs every test and builds the Windows installer, zip and AppImage on each push. Pushing a `knobs-v*` tag publishes them as a GitHub release.
+On Linux, the end-to-end tests need a display: `xvfb-run -a npm run test:e2e`. Building the Windows *installer* on Linux needs Wine; the portable zip doesn't. CI (`.github/workflows/knobs.yml`) runs every test and builds the Windows installer and zip on each push. Pushing a `knobs-v*` tag publishes them as a GitHub release.
 
 ### Layout
 

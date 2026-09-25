@@ -1,5 +1,8 @@
 // The overlay renderer: runs the pet simulation, draws it, and handles the mouse.
 // The window is click-through except while the cursor is over the pet (or its ball).
+//
+// Power: it redraws only as often as the pet needs — up to 60 fps while something moves, 24 fps
+// while it idles, 10 fps asleep, and not at all while hidden or while the PC is locked.
 
 import { drawEgg, drawPet, type Palette, paletteFor } from '../pet/draw';
 import { stageName, stageOf } from '../pet/growth';
@@ -7,7 +10,7 @@ import { BUILT_IN, type SpeciesDef } from '../pet/species';
 import type { PetData, Settings } from '../shared/types';
 import { type Env, Pet, type SimEvent } from '../sim/pet';
 import { ground } from '../sim/world';
-import { ballSprite, foodSprite, Fx } from './fx';
+import { ballSprite, butterflyEl, foodSprite, Fx } from './fx';
 import { Sounds } from './sound';
 
 const api = window.hatch;
@@ -26,6 +29,7 @@ let settings: Settings;
 let pet: Pet;
 let pal: Palette;
 let hidden = false;
+let locked = false;
 let cursor: { x: number; y: number } | null = null;
 let captured = false;
 let down: { x: number; y: number; t: number } | null = null;
@@ -37,6 +41,12 @@ let dirty = true;
 let lastSave = 0;
 let saveSoon = 0;
 let lastStatus = '';
+let lastAsleep = false;
+let statusAt = 0;
+/** Squash (+) and stretch (-) of the drawing, as a damped spring. */
+let squash = 0;
+let squashV = 0;
+let nextTwinkle = 2;
 const errors: string[] = [];
 const dpr = () => window.devicePixelRatio || 1;
 const env: Env = { rand: Math.random, hour: () => new Date().getHours(), now: () => Date.now() };
@@ -96,6 +106,8 @@ function draw() {
       ctx.scale(k, k);
     }
     if (pet.rot) ctx.rotate(pet.rot);
+    // Squash and stretch around the feet.
+    if (Math.abs(squash) > 0.002) ctx.scale(1 + squash * 0.55, 1 - squash);
     const outline = Math.min(2.4, Math.max(1.3, 1.6 * pet.px));
     drawPet(ctx, pet.rig, pal, speciesOf(pet.data.species).features, { scale: pet.px, outline, shadow: pet.grounded && pet.rot === 0 });
   }
@@ -103,9 +115,10 @@ function draw() {
   canvas.style.transform = `translate(${pet.x - S / 2}px, ${pet.y - S / 2}px)`;
 }
 
-// Food, ball and eggshell sprites.
+// Food, ball, butterfly and eggshell sprites.
 const foodEls = new Map<number, HTMLCanvasElement>();
 let ballEl: HTMLCanvasElement | null = null;
+let flyEl: HTMLDivElement | null = null;
 let shell: { el: HTMLCanvasElement; until: number } | null = null;
 
 function drawSprites() {
@@ -140,6 +153,16 @@ function drawSprites() {
     const s = b.r + 2;
     ballEl.style.transform = `translate(${b.x - s}px, ${b.y - b.r - s}px) rotate(${b.angle}rad)`;
   }
+  const fly = pet.butterfly;
+  if (fly && !flyEl) {
+    flyEl = butterflyEl(fly.hue);
+    stage.appendChild(flyEl);
+  }
+  if (!fly && flyEl) {
+    flyEl.remove();
+    flyEl = null;
+  }
+  if (fly && flyEl) flyEl.style.transform = `translate(${fly.x - 13}px, ${fly.y - 11}px) scaleX(${fly.vx < 0 ? -1 : 1}) rotate(${Math.max(-0.5, Math.min(0.5, fly.vy / 400))}rad)`;
   if (shell && performance.now() > shell.until) {
     shell.el.remove();
     shell = null;
@@ -164,6 +187,13 @@ function leaveShell() {
   setTimeout(() => (el.style.opacity = '0'), 38_000);
 }
 
+/** A point on the pet's body, for sparkles. */
+function randomBodyPoint() {
+  const b = pet.rig.s.bounds;
+  const l = { x: b.x1 + Math.random() * (b.x2 - b.x1), y: b.y1 + Math.random() * (b.y2 - b.y1) * 0.8 + (b.y2 - b.y1) * 0.2 };
+  return pet.toWorld(l);
+}
+
 // ---------------- events from the simulation ----------------
 
 function handle(events: SimEvent[]) {
@@ -185,14 +215,29 @@ function handle(events: SimEvent[]) {
       case 'dust':
         fx.dust(e.x, e.y, e.big, Math.max(0.6, pet.px));
         break;
-      case 'crumbs':
-        fx.crumbs(e.x, e.y, pet.species.diet === 'carnivore' ? '#b5532c' : '#5aa83a');
+      case 'crumbs': {
+        const food = pet.species.food;
+        fx.crumbs(e.x, e.y, food === 'meat' ? '#b5532c' : food === 'fish' ? '#8fc0e8' : food === 'berry' ? '#d8325a' : '#5aa83a');
         break;
+      }
+      case 'squash':
+        squash = e.amount;
+        squashV = 0;
+        break;
+      case 'burst': {
+        const c = pet.toWorld({ x: pet.rig.p.bodyLen * 0.4, y: pet.rig.height * 0.5 });
+        fx.burst(c.x, c.y, Math.max(0.8, pet.px * 1.6));
+        break;
+      }
       case 'hatched':
         pop = 0;
         leaveShell();
         api.notify({ type: 'hatched' });
         saveSoon = 1;
+        if (pet.data.shiny) {
+          const c = pet.headAt();
+          fx.burst(c.x, c.y + 10, 1);
+        }
         break;
       case 'grew':
         voice();
@@ -210,44 +255,62 @@ function status() {
   const d = pet.data;
   if (!pet.hatched) return `${d.name} · egg`;
   const g = pet.growth;
-  const doing = pet.asleep ? 'sleeping' : pet.act.k === 'eat' ? 'eating' : pet.act.k === 'climb' ? 'climbing' : '';
+  const doing = pet.asleep ? 'sleeping' : pet.act.k === 'eat' ? 'eating' : pet.act.k === 'climb' ? 'climbing' : pet.act.k === 'dance' ? 'dancing' : '';
   return `${d.name} · ${stageName(stageOf(g))} ${Math.floor(g * 100)}%${doing ? ` · ${doing}` : ''}`;
 }
 
 // ---------------- the loop ----------------
 
 let last = performance.now();
+let lastDraw = 0;
 let loopTimer = 0;
+let rafPending = false;
 
 function step(now: number) {
-  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+  // Real elapsed time: needs and growth count every second, even between slow ticks.
+  const dt = Math.max(0, (now - last) / 1000);
   last = now;
-  pet.setCursor(cursor, dt);
+  const anim = Math.min(0.1, dt);
+  pet.setCursor(cursor, anim);
   pet.update(dt);
   handle(pet.drain());
-  if (pop < 1) pop = Math.min(1, pop + dt / 0.35);
-  if (!hidden) {
+  if (pop < 1) pop = Math.min(1, pop + anim / 0.35);
+  if (squash !== 0) {
+    squashV += (-squash * 190 - squashV * 13) * anim;
+    squash += squashV * anim;
+    if (Math.abs(squash) < 0.002 && Math.abs(squashV) < 0.02) squash = squashV = 0;
+  }
+  const visible = !hidden && !locked;
+  if (visible) {
     draw();
     drawSprites();
     const h = pet.headAt();
     fx.follow(h.x, h.y - 6);
     frames++;
+    lastDraw = now;
     updateHover();
+    if (pet.data.shiny && pet.hatched && !pet.asleep && (nextTwinkle -= dt) <= 0) {
+      nextTwinkle = 1.2 + Math.random() * 1.8;
+      const q = randomBodyPoint();
+      fx.twinkle(q.x, q.y);
+    }
   }
   if (dirty) {
     dirty = false;
     canvasSize = 0;
   }
   const t = Date.now();
-  if (saveSoon && (saveSoon -= dt) <= 0) {
+  if (saveSoon && (saveSoon -= anim) <= 0) {
     saveSoon = 0;
     save();
-  } else if (t - lastSave > 20_000) save();
-  if (frames % 120 === 0) {
+  } else if (t - lastSave > 10_000) save();
+  if (t - statusAt > 4000) {
+    statusAt = t;
     const s = status();
-    if (s !== lastStatus) {
+    if (s !== lastStatus || pet.asleep !== lastAsleep) {
+      lastAsleep = pet.asleep;
       lastStatus = s;
-      api.notify({ type: 'status', text: s });
+      api.notify({ type: 'status', text: s, asleep: pet.asleep });
     }
   }
 }
@@ -258,7 +321,14 @@ function save() {
 }
 
 function loop() {
+  rafPending = false;
   const now = performance.now();
+  // On high refresh rate screens, animation frames come faster than 60 fps: skip the extras.
+  if (now - lastDraw < 1000 / 60 - 3 && !hidden && !locked && fps() >= 60) {
+    rafPending = true;
+    requestAnimationFrame(loop);
+    return;
+  }
   try {
     step(now);
   } catch (e) {
@@ -269,19 +339,35 @@ function loop() {
   schedule();
 }
 
+const MOVING = new Set(['walk', 'travel', 'jump', 'fall', 'move', 'climb', 'land', 'held', 'chase', 'zoomies', 'tail', 'hatch', 'pounce', 'hunt', 'shake', 'dizzy']);
+const CALM = new Set(['idle', 'sit', 'lie', 'watch', 'wake']);
+
+/** How often the pet needs to be redrawn right now. */
+function fps() {
+  if (hidden || locked) return 1;
+  if (!pet.hatched) return pet.egg.wobbleT > 0 || pet.act.k === 'hatch' || captured ? 30 : 8;
+  const busy = pet.foods.length > 0 || !!pet.ball || !!pet.butterfly || !!dragging || pop < 1 || squash !== 0 || !pet.grounded || Math.abs(pet.vx) > 1;
+  if (busy || MOVING.has(pet.act.k)) return 60;
+  if (pet.asleep) return 10;
+  if (CALM.has(pet.act.k)) return captured ? 30 : 24;
+  return 30;
+}
+
 function schedule() {
   clearTimeout(loopTimer);
-  if (hidden) {
-    // Hidden behind a full-screen app: keep needs and growth ticking, draw nothing.
-    loopTimer = window.setTimeout(loop, 1000);
-    return;
-  }
-  // Save power: slow frame rates while nothing much is moving.
-  const busy = !!pet.foods.length || !!pet.ball || !!dragging || pop < 1 || captured;
-  const k = pet.act.k;
-  if (!busy && pet.asleep) loopTimer = window.setTimeout(loop, 1000 / 12);
-  else if (!busy && pet.grounded && Math.abs(pet.vx) < 1 && (k === 'idle' || k === 'sit' || k === 'lie' || k === 'egg' || k === 'watch')) loopTimer = window.setTimeout(loop, 1000 / 30);
-  else requestAnimationFrame(loop);
+  if (rafPending) return;
+  const f = fps();
+  if (f >= 60) {
+    rafPending = true;
+    requestAnimationFrame(loop);
+  } else loopTimer = window.setTimeout(loop, 1000 / f);
+}
+
+/** Something happened (input, a command): run the next frame now instead of waiting. */
+function wake() {
+  if (rafPending) return;
+  clearTimeout(loopTimer);
+  loopTimer = window.setTimeout(loop, 0);
 }
 
 // ---------------- mouse ----------------
@@ -300,11 +386,33 @@ function setCapture(on: boolean) {
 
 function updateHover() {
   if (dragging || down) return;
-  setCapture(!!cursor && !hidden && (pet.hitTest(cursor) || overBall(cursor)));
+  setCapture(!!cursor && !hidden && !locked && (pet.hitTest(cursor) || overBall(cursor)));
 }
+
+/** Let go of whatever is held (mouse released, focus lost, or a missed mouseup). */
+function endPointer(at?: { x: number; y: number }) {
+  if (dragging === 'pet') pet.release();
+  else if (dragging === 'ball') pet.releaseBall();
+  dragging = null;
+  down = null;
+  document.body.classList.remove('dragging');
+  if (at) cursor = at;
+  updateHover();
+  wake();
+}
+
+let lastMove = { x: -1, y: -1 };
 
 window.addEventListener('mousemove', (e) => {
   const p = { x: e.clientX, y: e.clientY };
+  // The button was released somewhere we didn't hear about. (Chromium also sends synthetic moves
+  // without buttons when the page changes under a still cursor; those don't move, so skip them.)
+  const moved = Math.abs(p.x - lastMove.x) + Math.abs(p.y - lastMove.y) > 2;
+  lastMove = p;
+  if (down && e.buttons === 0 && moved) {
+    endPointer(p);
+    return;
+  }
   const prev = cursor;
   cursor = p;
   if (down && !dragging && Math.hypot(p.x - down.x, p.y - down.y) > 5) {
@@ -314,6 +422,7 @@ window.addEventListener('mousemove', (e) => {
       pet.grab(down);
     }
     document.body.classList.add('dragging');
+    wake();
   }
   if (dragging === 'pet') pet.drag(p);
   else if (dragging === 'ball') pet.dragBall(p);
@@ -323,18 +432,31 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   down = { x: e.clientX, y: e.clientY, t: performance.now() };
+  lastMove = { x: e.clientX, y: e.clientY };
 });
+
+// Keep receiving the pointer while the button is down, even outside the window, so a release is
+// never missed; if the system takes the pointer away, let go.
+window.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  try {
+    document.documentElement.setPointerCapture(e.pointerId);
+  } catch {
+    /* not capturable */
+  }
+});
+window.addEventListener('pointercancel', () => endPointer());
 
 window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
-  if (dragging === 'pet') pet.release();
-  else if (dragging === 'ball') pet.releaseBall();
-  else if (down && performance.now() - down.t < 450 && pet.hitTest(down)) pet.poke();
-  dragging = null;
-  down = null;
-  document.body.classList.remove('dragging');
-  cursor = { x: e.clientX, y: e.clientY };
-  updateHover();
+  const tap = !dragging && down && performance.now() - down.t < 450 && pet.hitTest(down);
+  endPointer({ x: e.clientX, y: e.clientY });
+  if (tap) pet.poke();
+});
+
+window.addEventListener('blur', () => endPointer());
+document.addEventListener('mouseleave', () => {
+  if (!dragging) endPointer();
 });
 
 window.addEventListener('dblclick', (e) => {
@@ -343,10 +465,23 @@ window.addEventListener('dblclick', (e) => {
 
 window.addEventListener('contextmenu', (e) => {
   e.preventDefault();
+  endPointer();
   api.menu();
 });
 
 // ---------------- wiring ----------------
+
+function setHidden(h: boolean) {
+  hidden = h;
+  pet.setHidden(h || locked);
+  if (h || locked) {
+    fx.clear();
+    endPointer();
+    setCapture(false);
+    sounds.sleep();
+  }
+  wake();
+}
 
 async function main() {
   const init = await api.init();
@@ -359,16 +494,14 @@ async function main() {
   api.onCursor((p) => {
     if (!dragging && !down) cursor = p;
   });
-  api.onActivity((a) => pet.setActivity(a));
-  api.onHidden((h) => {
-    hidden = h;
-    pet.setHidden(h);
-    if (h) {
-      fx.clear();
-      setCapture(false);
+  api.onActivity((a) => {
+    pet.setActivity(a);
+    if (a.locked !== locked) {
+      locked = a.locked;
+      setHidden(hidden);
     }
-    schedule();
   });
+  api.onHidden((h) => setHidden(h));
   api.onSettings((s) => applySettings(s));
   api.onSpecies((list) => {
     species = list;
@@ -382,6 +515,7 @@ async function main() {
     save();
   });
   api.onCommand((c) => {
+    wake();
     switch (c.type) {
       case 'feed':
         return pet.feed();
@@ -398,13 +532,26 @@ async function main() {
         return save();
       case 'hatch-now':
         return pet.hatchNow();
+      case 'recolor': {
+        pet.data.variant = c.variant;
+        pet.data.colors = c.colors;
+        paletteForPet();
+        if (pet.hatched && !hidden) {
+          const q = pet.toWorld({ x: pet.rig.p.bodyLen * 0.4, y: pet.rig.height * 0.5 });
+          fx.burst(q.x, q.y, Math.max(0.8, pet.px * 1.4));
+          if (pet.grounded && !pet.asleep) pet.react('happy');
+        }
+        return save();
+      }
+      case 'trick':
+        return pet.trick(c.name);
       case 'flush':
         return save();
     }
   });
 
   if (init.test || init.smoke) {
-    (window as unknown as { __test: unknown }).__test = { get pet() { return pet; }, fx, frames: () => frames, errors, canvas, sounds };
+    (window as unknown as { __test: unknown }).__test = { get pet() { return pet; }, fx, frames: () => frames, fps, errors, canvas, sounds };
   }
   if (init.smoke) void smoke();
   if (!pet.hatched) {
@@ -438,6 +585,9 @@ async function smoke() {
     pet.release();
     await wait(1500);
     report.landed = pet.grounded;
+    pet.trick('dance');
+    await wait(600);
+    report.danced = pet.act.k === 'dance';
     pet.sleepNow();
     await wait(600);
     report.slept = pet.asleep;

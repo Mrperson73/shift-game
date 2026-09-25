@@ -43,6 +43,13 @@ export interface BodyParams {
   armAngle: number;
   /** Elbow bend (radians). */
   armBend: number;
+  /** Four-legged species: height of the chest when standing (0 for two-legged ones). */
+  shoulderHeight: number;
+  /** Four-legged species: upper arm, forearm and hand lengths, and front leg width. */
+  fThigh: number;
+  fShin: number;
+  fMeta: number;
+  fLegW: number;
 }
 
 export type BodyKey = keyof BodyParams;
@@ -58,7 +65,34 @@ export interface Features {
   spikes?: boolean;
   sickleClaw?: boolean;
   beak?: boolean;
+  /** Ceratopsian neck frill. */
+  frill?: boolean;
+  /** Long horns above the eyes (Triceratops). */
+  browHorns?: boolean;
+  /** A horn on the nose. */
+  noseHorn?: boolean;
+  /** Plates along the back (Stegosaurus). */
+  plates?: boolean;
+  /** Spikes at the end of the tail (Stegosaurus). */
+  thagomizer?: boolean;
+  /** Bony armour and side spikes (Ankylosaurus). */
+  armor?: boolean;
+  /** A bony club at the end of the tail (Ankylosaurus). */
+  club?: boolean;
+  /** A long tube crest curving back from the head (Parasaurolophus). */
+  tubeCrest?: boolean;
+  /** Two thin crests on top of the head (Dilophosaurus). */
+  twinCrests?: boolean;
+  /** A long, low, crocodile-like snout (Spinosaurus). */
+  crocSnout?: boolean;
+  /** A broad duck-like bill (hadrosaurs). */
+  duckBill?: boolean;
+  /** A fin along the tail (Spinosaurus). */
+  finTail?: boolean;
 }
+
+/** What it likes to eat when you feed it. */
+export type Food = 'meat' | 'fish' | 'leaf' | 'berry';
 
 export interface Personality {
   /** 0..1 how fast it walks and runs. */
@@ -102,6 +136,7 @@ export interface SpeciesDef {
   lengthM: number;
   /** A fun fact for the egg chooser. */
   fact: string;
+  food: Food;
   body: BodyParams;
   /** Multipliers applied at hatch (growth 0) and eased out to 1 at adulthood. */
   baby: Partial<Record<BodyKey, number>>;
@@ -140,7 +175,15 @@ const BABY_COMMON: Partial<Record<BodyKey, number>> = {
   armUpper: 1.2,
   armFore: 1.2,
   armW: 1.3,
+  shoulderHeight: 0.76,
+  fThigh: 0.76,
+  fShin: 0.72,
+  fMeta: 0.8,
+  fLegW: 1.25,
 };
+
+/** Front-leg parameters of two-legged species (unused). */
+const NO_FRONT = { shoulderHeight: 0, fThigh: 0, fShin: 0, fMeta: 0, fLegW: 0 };
 
 export const REX: SpeciesDef = {
   id: 'rex',
@@ -152,6 +195,7 @@ export const REX: SpeciesDef = {
   group: 'Tyrannosaur',
   lengthM: 12,
   fact: 'Its bite was the strongest of any land animal ever.',
+  food: 'meat',
   body: {
     hipHeight: 42,
     thigh: 22,
@@ -186,6 +230,7 @@ export const REX: SpeciesDef = {
     armW: 2.6,
     armAngle: -1.15,
     armBend: 1.05,
+    ...NO_FRONT,
   },
   baby: BABY_COMMON,
   features: { teeth: true, brow: true },
@@ -225,6 +270,7 @@ export const RAPTOR: SpeciesDef = {
   group: 'Raptor',
   lengthM: 6,
   fact: 'It had a 24 cm sickle claw on each foot.',
+  food: 'meat',
   body: {
     hipHeight: 38,
     thigh: 19,
@@ -259,6 +305,7 @@ export const RAPTOR: SpeciesDef = {
     armW: 3.2,
     armAngle: -2.15,
     armBend: 2.05,
+    ...NO_FRONT,
   },
   baby: { ...BABY_COMMON, tailLen: 0.7 },
   features: { teeth: true, feathers: true, crest: true, sickleClaw: true },
@@ -298,6 +345,7 @@ export const PACHY: SpeciesDef = {
   group: 'Pachycephalosaur',
   lengthM: 4.5,
   fact: 'The dome on its head was up to 25 cm of solid bone.',
+  food: 'leaf',
   body: {
     hipHeight: 37,
     thigh: 20,
@@ -332,6 +380,7 @@ export const PACHY: SpeciesDef = {
     armW: 3,
     armAngle: -1.2,
     armBend: 1.1,
+    ...NO_FRONT,
   },
   baby: { ...BABY_COMMON, headH: 1.45 },
   features: { dome: true, beak: true },
@@ -361,12 +410,629 @@ export const PACHY: SpeciesDef = {
   },
 };
 
-export const BUILT_IN: SpeciesDef[] = [REX, RAPTOR, PACHY];
+// ---------------- four-legged ----------------
+
+export const TRIKE: SpeciesDef = {
+  id: 'trike',
+  name: 'Trike',
+  latin: 'Triceratops',
+  blurb: 'Gentle and stubborn. Three horns, one big frill, loves ferns.',
+  diet: 'herbivore',
+  stance: 'quad',
+  group: 'Ceratopsian',
+  lengthM: 9,
+  fact: 'Its skull, frill included, was one of the biggest of any land animal.',
+  food: 'leaf',
+  body: {
+    hipHeight: 35,
+    thigh: 15.5,
+    shin: 13.5,
+    meta: 9,
+    heel: 7,
+    toe: 6,
+    legW: 11,
+    bodyLen: 33,
+    hipR: 17,
+    chestR: 16.5,
+    bellyR: 19,
+    bellyDrop: 5,
+    pitch: -0.2,
+    neckLen: 7,
+    neckR: 11,
+    neckAngle: -0.05,
+    headLen: 30,
+    headH: 16,
+    snoutH: 11,
+    jawD: 7,
+    headAngle: -0.35,
+    eyeR: 3.2,
+    eyeX: 0.44,
+    eyeY: 0.62,
+    tailLen: 34,
+    tailR: 11,
+    tailDroop: 0.32,
+    tailStiff: 0.5,
+    armUpper: 6,
+    armFore: 5,
+    armW: 2.6,
+    armAngle: -1.2,
+    armBend: 1,
+    shoulderHeight: 30,
+    fThigh: 12,
+    fShin: 10.5,
+    fMeta: 6,
+    fLegW: 8,
+  },
+  baby: { ...BABY_COMMON, headLen: 1.35, headH: 1.6, snoutH: 1.5, neckLen: 0.8 },
+  features: { beak: true, frill: true, browHorns: true, noseHorn: true },
+  personality: { speed: 0.35, jump: 0.18, curiosity: 0.45, stamina: 0.6, playfulness: 0.45, vocal: 0.5 },
+  variants: [
+    { id: 'savanna', name: 'Savanna', body: '#b58a5a', belly: '#ecdcbc', pattern: '#7d5836', accent: '#c95b3a', iris: '#3a2a1a', pattern_kind: 'bands' },
+    { id: 'moss', name: 'Moss', body: '#7f9a6a', belly: '#e2e6c8', pattern: '#57704a', accent: '#e0a13c', iris: '#3b2a15', pattern_kind: 'speckles' },
+    { id: 'slate', name: 'Slate', body: '#6f7f94', belly: '#d7dee8', pattern: '#4a5669', accent: '#e35d5d', iris: '#2a2f3a', pattern_kind: 'saddle' },
+    { id: 'clay', name: 'Clay', body: '#b8664a', belly: '#f2d2b8', pattern: '#7c3b28', accent: '#f2c14e', iris: '#2f1a12', pattern_kind: 'bands' },
+    { id: 'sunburst', name: 'Sunburst', body: '#d9b24a', belly: '#fff0c2', pattern: '#9b7424', accent: '#3f8fd8', iris: '#3a2a10', pattern_kind: 'spots' },
+    { id: 'obsidian', name: 'Obsidian', body: '#443e4b', belly: '#8e8797', pattern: '#25212b', accent: '#ff8a3d', iris: '#f0c050', pattern_kind: 'speckles' },
+  ],
+  shiny: { id: 'shiny', name: 'Shiny Jade', body: '#5fcfa4', belly: '#e8fff5', pattern: '#2f9a7a', accent: '#ffd35a', iris: '#ff5ab0', pattern_kind: 'bands' },
+  voice: { pitch: 90, growl: 0.5, kind: 'bellow' },
+  lines: {
+    hello: ['Hrrm! Hi!', 'Hmmph.'],
+    welcome: ["You're back!", 'Hrrm hrrm!'],
+    feed: ['Crunchy!', 'Ferns!'],
+    pet: ['Mmm.', 'Behind the frill!'],
+    game: ['Charge!', 'Good luck!'],
+    gameOver: ['GG!', 'Snack break?'],
+    sleepy: ['*yawn*'],
+    night: ['Sleepy time.'],
+    grow: ['Bigger horns!'],
+    thrown: ['Hey!', 'Whoa!'],
+    poke: ['Hm?', 'Hrrm?'],
+  },
+};
+
+export const STEGO: SpeciesDef = {
+  id: 'stego',
+  name: 'Stego',
+  latin: 'Stegosaurus',
+  blurb: 'Slow, sweet and a bit forgetful. Big plates, spiky tail.',
+  diet: 'herbivore',
+  stance: 'quad',
+  group: 'Stegosaur',
+  lengthM: 9,
+  fact: 'The four spikes on its tail are nicknamed the "thagomizer".',
+  food: 'leaf',
+  body: {
+    hipHeight: 42,
+    thigh: 19,
+    shin: 17,
+    meta: 9,
+    heel: 7,
+    toe: 5,
+    legW: 10.5,
+    bodyLen: 36,
+    hipR: 18,
+    chestR: 13.5,
+    bellyR: 17,
+    bellyDrop: 7,
+    pitch: -0.45,
+    neckLen: 12,
+    neckR: 7,
+    neckAngle: 0.08,
+    headLen: 18,
+    headH: 9,
+    snoutH: 6,
+    jawD: 4.2,
+    headAngle: -0.2,
+    eyeR: 2.5,
+    eyeX: 0.42,
+    eyeY: 0.62,
+    tailLen: 52,
+    tailR: 12,
+    tailDroop: 0.3,
+    tailStiff: 0.78,
+    armUpper: 6,
+    armFore: 5,
+    armW: 2.6,
+    armAngle: -1.2,
+    armBend: 1,
+    shoulderHeight: 25,
+    fThigh: 10,
+    fShin: 8.9,
+    fMeta: 5,
+    fLegW: 7,
+  },
+  baby: { ...BABY_COMMON, headLen: 1.5, headH: 1.9, snoutH: 1.7, hipHeight: 0.72, shoulderHeight: 0.86 },
+  features: { beak: true, plates: true, thagomizer: true },
+  personality: { speed: 0.3, jump: 0.15, curiosity: 0.35, stamina: 0.5, playfulness: 0.4, vocal: 0.35 },
+  variants: [
+    { id: 'leaf', name: 'Leaf', body: '#6f9a5a', belly: '#e4ebc6', pattern: '#4a6d3c', accent: '#e0703a', iris: '#3a2a14', pattern_kind: 'spots' },
+    { id: 'autumn', name: 'Autumn', body: '#b8864a', belly: '#f3e0bc', pattern: '#7f5a2e', accent: '#d9453a', iris: '#2f1d0e', pattern_kind: 'bands' },
+    { id: 'teal', name: 'Teal', body: '#4f8a8c', belly: '#d6ecea', pattern: '#34605f', accent: '#f2b84a', iris: '#1f2f30', pattern_kind: 'speckles' },
+    { id: 'dusk', name: 'Dusk', body: '#7a6a94', belly: '#e2dcee', pattern: '#524568', accent: '#ff8fa3', iris: '#2a2238', pattern_kind: 'saddle' },
+    { id: 'granite', name: 'Granite', body: '#8a8a84', belly: '#dedcd2', pattern: '#5d5d57', accent: '#7ec3e0', iris: '#2a2a26', pattern_kind: 'speckles' },
+    { id: 'crimson', name: 'Crimson', body: '#9e3b36', belly: '#f0c9b5', pattern: '#62201e', accent: '#ffd166', iris: '#20100e', pattern_kind: 'bands' },
+  ],
+  shiny: { id: 'shiny', name: 'Shiny Aurora', body: '#7fd4e6', belly: '#f0fdff', pattern: '#4a9fc0', accent: '#ff7fd0', iris: '#7a3cff', pattern_kind: 'spots' },
+  voice: { pitch: 120, growl: 0.35, kind: 'bellow' },
+  lines: {
+    hello: ['Hi...', 'Mrrrm.'],
+    welcome: ['Oh! Hi!', "You're back."],
+    feed: ['Leafy!', 'Munch.'],
+    pet: ['Nice...', 'Plates, please.'],
+    game: ["Thagomize 'em!", 'Go go!'],
+    gameOver: ['GG.', 'Nap?'],
+    sleepy: ['*yawn*'],
+    night: ['Zzz soon.'],
+    grow: ['Bigger plates!'],
+    thrown: ['Wha-!', 'Oof.'],
+    poke: ['Hm?', '...?'],
+  },
+};
+
+export const ANKY: SpeciesDef = {
+  id: 'anky',
+  name: 'Anky',
+  latin: 'Ankylosaurus',
+  blurb: 'A calm little tank. Armoured back, clubbed tail, big appetite.',
+  diet: 'herbivore',
+  stance: 'quad',
+  group: 'Ankylosaur',
+  lengthM: 7,
+  fact: 'It was armoured like a tank, and its tail club could break bones.',
+  food: 'leaf',
+  body: {
+    hipHeight: 31,
+    thigh: 13,
+    shin: 11.5,
+    meta: 7,
+    heel: 6,
+    toe: 5,
+    legW: 10.5,
+    bodyLen: 38,
+    hipR: 17,
+    chestR: 16,
+    bellyR: 19,
+    bellyDrop: 3,
+    pitch: -0.06,
+    neckLen: 7,
+    neckR: 9,
+    neckAngle: -0.12,
+    headLen: 19,
+    headH: 11.5,
+    snoutH: 8,
+    jawD: 5,
+    headAngle: -0.25,
+    eyeR: 2.6,
+    eyeX: 0.5,
+    eyeY: 0.58,
+    tailLen: 46,
+    tailR: 10,
+    tailDroop: 0.12,
+    tailStiff: 0.82,
+    armUpper: 6,
+    armFore: 5,
+    armW: 2.6,
+    armAngle: -1.2,
+    armBend: 1,
+    shoulderHeight: 28,
+    fThigh: 11.2,
+    fShin: 10.2,
+    fMeta: 5,
+    fLegW: 8,
+  },
+  baby: { ...BABY_COMMON, headLen: 1.4, headH: 1.7, snoutH: 1.6 },
+  features: { beak: true, armor: true, club: true },
+  personality: { speed: 0.25, jump: 0.1, curiosity: 0.3, stamina: 0.55, playfulness: 0.35, vocal: 0.3 },
+  variants: [
+    { id: 'earth', name: 'Earth', body: '#8a7355', belly: '#dccdb0', pattern: '#5e4b35', accent: '#d8c49a', iris: '#2c2014', pattern_kind: 'speckles' },
+    { id: 'olive', name: 'Olive', body: '#76804f', belly: '#dfe2bf', pattern: '#525a34', accent: '#e9d8a6', iris: '#2c2a14', pattern_kind: 'speckles' },
+    { id: 'rust', name: 'Rust', body: '#a35a3a', belly: '#efcfb4', pattern: '#6c3620', accent: '#f0dca8', iris: '#2a140c', pattern_kind: 'bands' },
+    { id: 'basalt', name: 'Basalt', body: '#4e525a', belly: '#b9bcc4', pattern: '#30333a', accent: '#d9dde6', iris: '#e0a030', pattern_kind: 'speckles' },
+    { id: 'mossy', name: 'Mossy', body: '#5b7f5a', belly: '#d9e8cf', pattern: '#3c5a3c', accent: '#f4d27a', iris: '#2a2a14', pattern_kind: 'spots' },
+    { id: 'sand', name: 'Sand', body: '#cfb07a', belly: '#f7ebcf', pattern: '#9a7c4a', accent: '#8a5a3a', iris: '#3a2a14', pattern_kind: 'saddle' },
+  ],
+  shiny: { id: 'shiny', name: 'Shiny Bronze', body: '#c9894a', belly: '#ffe6c2', pattern: '#8a5a26', accent: '#fff1b8', iris: '#39d0c8', pattern_kind: 'speckles' },
+  voice: { pitch: 100, growl: 0.6, kind: 'bellow' },
+  lines: {
+    hello: ['Hrmph.', 'Hi.'],
+    welcome: ['Oh. Hi.', 'Hrmph!'],
+    feed: ['Munch.', 'Yum.'],
+    pet: ['...ok.', 'Nice.'],
+    game: ['Smash!', "Club 'em!"],
+    gameOver: ['GG.', 'Tank mode off.'],
+    sleepy: ['*yawn*'],
+    night: ['Bedtime.'],
+    grow: ['Harder armour!'],
+    thrown: ['Oof!', 'Heavy!'],
+    poke: ['Clonk.', 'Hm?'],
+  },
+};
+
+// ---------------- more two-legged ----------------
+
+export const SPINO: SpeciesDef = {
+  id: 'spino',
+  name: 'Spino',
+  latin: 'Spinosaurus',
+  blurb: 'A huge sail and a crocodile snout. Loves fish and big splashes.',
+  diet: 'carnivore',
+  stance: 'biped',
+  group: 'Spinosaur',
+  lengthM: 15,
+  fact: 'One of the longest meat-eaters ever, it hunted fish in rivers.',
+  food: 'fish',
+  body: {
+    hipHeight: 37,
+    thigh: 18,
+    shin: 17,
+    meta: 10,
+    heel: 8,
+    toe: 8,
+    legW: 11,
+    bodyLen: 36,
+    hipR: 15,
+    chestR: 14,
+    bellyR: 14,
+    bellyDrop: 4,
+    pitch: 0.12,
+    neckLen: 17,
+    neckR: 8,
+    neckAngle: 0.6,
+    headLen: 42,
+    headH: 11,
+    snoutH: 7,
+    jawD: 6,
+    headAngle: -0.6,
+    eyeR: 3,
+    eyeX: 0.24,
+    eyeY: 0.74,
+    tailLen: 64,
+    tailR: 11,
+    tailDroop: 0.05,
+    tailStiff: 0.5,
+    armUpper: 11,
+    armFore: 9,
+    armW: 3.4,
+    armAngle: -1.6,
+    armBend: 1.4,
+    ...NO_FRONT,
+  },
+  baby: { ...BABY_COMMON, headLen: 1.25, headH: 1.95 },
+  features: { teeth: true, sail: true, finTail: true, crocSnout: true },
+  personality: { speed: 0.5, jump: 0.35, curiosity: 0.6, stamina: 0.6, playfulness: 0.55, vocal: 0.6 },
+  variants: [
+    { id: 'river', name: 'River', body: '#5f7f7a', belly: '#dfe9e0', pattern: '#3e5a56', accent: '#d9784a', iris: '#e8c040', pattern_kind: 'stripes' },
+    { id: 'desert', name: 'Desert', body: '#c49a62', belly: '#f5e6c8', pattern: '#8a6438', accent: '#c0432f', iris: '#f0c24a', pattern_kind: 'bands' },
+    { id: 'swamp', name: 'Swamp', body: '#667a45', belly: '#dde6bd', pattern: '#435429', accent: '#e5b640', iris: '#f2a93a', pattern_kind: 'speckles' },
+    { id: 'deep', name: 'Deep', body: '#35506e', belly: '#b9cde0', pattern: '#1f3148', accent: '#4fd1c5', iris: '#f5d76e', pattern_kind: 'stripes' },
+    { id: 'blood', name: 'Blood', body: '#7c2f2f', belly: '#e8c0b0', pattern: '#4a1818', accent: '#f09a3a', iris: '#ffe066', pattern_kind: 'saddle' },
+    { id: 'sunset', name: 'Sunset', body: '#d9774a', belly: '#ffe2c4', pattern: '#9c4a2a', accent: '#7a4fd6', iris: '#ffd35a', pattern_kind: 'bands' },
+  ],
+  shiny: { id: 'shiny', name: 'Shiny Pearl', body: '#e6e1f5', belly: '#ffffff', pattern: '#b6a8e0', accent: '#ff9ec7', iris: '#38c9ff', pattern_kind: 'stripes' },
+  voice: { pitch: 95, growl: 0.6, kind: 'roar' },
+  lines: {
+    hello: ['Rrrah!', 'Hi!'],
+    welcome: ['Back!', 'Fish time?'],
+    feed: ['FISH!', 'Splashy!'],
+    pet: ['Rrrr.', 'More!'],
+    game: ['Rrrah! Go!', 'Hunt!'],
+    gameOver: ['GG!', 'Swim break?'],
+    sleepy: ['*yawn*'],
+    night: ["It's late..."],
+    grow: ['Bigger sail!'],
+    thrown: ['Hey!', 'Splash?'],
+    poke: ['?', 'Rrr?'],
+  },
+};
+
+export const CARNO: SpeciesDef = {
+  id: 'carno',
+  name: 'Carno',
+  latin: 'Carnotaurus',
+  blurb: 'A horned speedster with tiny arms. Always ready to race.',
+  diet: 'carnivore',
+  stance: 'biped',
+  group: 'Abelisaur',
+  lengthM: 8,
+  fact: 'Its name means "meat-eating bull", after the horns above its eyes.',
+  food: 'meat',
+  body: {
+    hipHeight: 44,
+    thigh: 23,
+    shin: 22,
+    meta: 13,
+    heel: 10,
+    toe: 8,
+    legW: 11,
+    bodyLen: 27,
+    hipR: 14,
+    chestR: 13,
+    bellyR: 12.5,
+    bellyDrop: 3,
+    pitch: 0.06,
+    neckLen: 14,
+    neckR: 9,
+    neckAngle: 0.55,
+    headLen: 27,
+    headH: 16,
+    snoutH: 12,
+    jawD: 8,
+    headAngle: -0.42,
+    eyeR: 3.2,
+    eyeX: 0.36,
+    eyeY: 0.66,
+    tailLen: 58,
+    tailR: 11,
+    tailDroop: 0.05,
+    tailStiff: 0.72,
+    armUpper: 3.6,
+    armFore: 2.6,
+    armW: 2.3,
+    armAngle: -1,
+    armBend: 0.5,
+    ...NO_FRONT,
+  },
+  baby: BABY_COMMON,
+  features: { teeth: true, horns: true, brow: true },
+  personality: { speed: 0.95, jump: 0.6, curiosity: 0.6, stamina: 0.7, playfulness: 0.6, vocal: 0.7 },
+  variants: [
+    { id: 'crimson', name: 'Crimson', body: '#a8453a', belly: '#f2cdb4', pattern: '#6b241d', accent: '#3a3336', iris: '#ffd84a', pattern_kind: 'stripes' },
+    { id: 'dune', name: 'Dune', body: '#c9a06a', belly: '#f5e5c6', pattern: '#8a6538', accent: '#6b3d24', iris: '#f2b233', pattern_kind: 'bands' },
+    { id: 'charcoal', name: 'Charcoal', body: '#4a4a52', belly: '#a9a9b2', pattern: '#2a2a30', accent: '#e04a3a', iris: '#ff6a3a', pattern_kind: 'speckles' },
+    { id: 'forest', name: 'Forest', body: '#5d7d4a', belly: '#dbe4c0', pattern: '#3a5230', accent: '#c7643b', iris: '#f0c030', pattern_kind: 'stripes' },
+    { id: 'royal', name: 'Royal', body: '#5b4a8a', belly: '#d8d0ef', pattern: '#382c5e', accent: '#f2c94c', iris: '#9ef07a', pattern_kind: 'rosettes' },
+    { id: 'tiger', name: 'Tiger', body: '#e0873a', belly: '#fff0d8', pattern: '#3a2014', accent: '#fff0d8', iris: '#9be35a', pattern_kind: 'stripes' },
+  ],
+  shiny: { id: 'shiny', name: 'Shiny Onyx', body: '#2c2835', belly: '#6a6380', pattern: '#0f0d14', accent: '#ff4fd8', iris: '#40ffcf', pattern_kind: 'rosettes' },
+  voice: { pitch: 140, growl: 0.8, kind: 'roar' },
+  lines: {
+    hello: ['RAH!', 'Hi!'],
+    welcome: ['Back!', 'RAH!'],
+    feed: ['MEAT!', 'Nom!'],
+    pet: ['Grrr...', 'Heh.'],
+    game: ['Charge!', 'Go fast!'],
+    gameOver: ['GG!', 'Again!'],
+    sleepy: ['*yawn*'],
+    night: ['Still up?'],
+    grow: ['Bigger horns!'],
+    thrown: ['Wheee!', 'Hey!'],
+    poke: ['?', 'Grr?'],
+  },
+};
+
+export const DILO: SpeciesDef = {
+  id: 'dilo',
+  name: 'Dilo',
+  latin: 'Dilophosaurus',
+  blurb: 'A show-off with two fancy crests. Chatty, sneaky and quick.',
+  diet: 'carnivore',
+  stance: 'biped',
+  group: 'Dilophosaur',
+  lengthM: 7,
+  fact: 'Its two thin head crests were probably for showing off, like a bird’s.',
+  food: 'meat',
+  body: {
+    hipHeight: 36,
+    thigh: 19,
+    shin: 19,
+    meta: 11,
+    heel: 9,
+    toe: 7,
+    legW: 9,
+    bodyLen: 26,
+    hipR: 12,
+    chestR: 11.5,
+    bellyR: 11,
+    bellyDrop: 3,
+    pitch: 0.08,
+    neckLen: 19,
+    neckR: 6.5,
+    neckAngle: 0.9,
+    headLen: 27,
+    headH: 11,
+    snoutH: 8,
+    jawD: 5.5,
+    headAngle: -0.85,
+    eyeR: 3.2,
+    eyeX: 0.36,
+    eyeY: 0.7,
+    tailLen: 60,
+    tailR: 9,
+    tailDroop: 0,
+    tailStiff: 0.75,
+    armUpper: 10,
+    armFore: 9,
+    armW: 3,
+    armAngle: -1.9,
+    armBend: 1.8,
+    ...NO_FRONT,
+  },
+  baby: { ...BABY_COMMON, neckLen: 0.65 },
+  features: { teeth: true, twinCrests: true },
+  personality: { speed: 0.75, jump: 0.7, curiosity: 0.8, stamina: 0.55, playfulness: 0.75, vocal: 0.75 },
+  variants: [
+    { id: 'jungle', name: 'Jungle', body: '#6a8f4f', belly: '#e3ecc6', pattern: '#44642f', accent: '#e5533d', iris: '#f5c542', pattern_kind: 'stripes' },
+    { id: 'canyon', name: 'Canyon', body: '#c08a5a', belly: '#f3dfc2', pattern: '#83592f', accent: '#f2d24a', iris: '#e89a2a', pattern_kind: 'bands' },
+    { id: 'lagoon', name: 'Lagoon', body: '#4f8a9a', belly: '#d7eef2', pattern: '#2f5f6b', accent: '#ffb347', iris: '#f5e663', pattern_kind: 'spots' },
+    { id: 'venom', name: 'Venom', body: '#8fb83a', belly: '#eef7c6', pattern: '#4f6b1d', accent: '#b03acf', iris: '#ff5a3a', pattern_kind: 'rosettes' },
+    { id: 'ember', name: 'Ember', body: '#b54a3a', belly: '#f6d3c0', pattern: '#6e2419', accent: '#ffd166', iris: '#ffe066', pattern_kind: 'speckles' },
+    { id: 'frost', name: 'Frost', body: '#b8c9d9', belly: '#f5f9fd', pattern: '#7890a8', accent: '#4a7ad9', iris: '#5ad1ff', pattern_kind: 'bands' },
+  ],
+  shiny: { id: 'shiny', name: 'Shiny Neon', body: '#3ddcb0', belly: '#e8fff7', pattern: '#1a9a74', accent: '#ff4f9a', iris: '#fff04a', pattern_kind: 'stripes' },
+  voice: { pitch: 420, growl: 0.5, kind: 'screech' },
+  lines: {
+    hello: ['Hssss!', 'Hi hi!'],
+    welcome: ["You're back!", 'Chirr!'],
+    feed: ['Nom!', 'Mine!'],
+    pet: ['Chirrr.', 'Hehe.'],
+    game: ['Hunt!', "Let's go!"],
+    gameOver: ['GG!', 'Again?'],
+    sleepy: ['*yawn*'],
+    night: ['Still awake?'],
+    grow: ['Look at my crests!'],
+    thrown: ['Wheee!', 'Hss!'],
+    poke: ['?', 'Hm?'],
+  },
+};
+
+export const PARASAUR: SpeciesDef = {
+  id: 'parasaur',
+  name: 'Parasaur',
+  latin: 'Parasaurolophus',
+  blurb: 'Friendly and LOUD. Honks through its long crest like a trumpet.',
+  diet: 'herbivore',
+  stance: 'biped',
+  group: 'Hadrosaur',
+  lengthM: 9.5,
+  fact: 'Air through its hollow crest made deep, trumpet-like calls.',
+  food: 'leaf',
+  body: {
+    hipHeight: 40,
+    thigh: 21,
+    shin: 19,
+    meta: 10,
+    heel: 8,
+    toe: 6,
+    legW: 12,
+    bodyLen: 32,
+    hipR: 16,
+    chestR: 14,
+    bellyR: 16,
+    bellyDrop: 5,
+    pitch: 0,
+    neckLen: 16,
+    neckR: 8,
+    neckAngle: 0.72,
+    headLen: 25,
+    headH: 10.5,
+    snoutH: 7,
+    jawD: 5.5,
+    headAngle: -0.72,
+    eyeR: 3,
+    eyeX: 0.4,
+    eyeY: 0.66,
+    tailLen: 58,
+    tailR: 12.5,
+    tailDroop: 0.05,
+    tailStiff: 0.7,
+    armUpper: 12,
+    armFore: 11,
+    armW: 3.6,
+    armAngle: -1.8,
+    armBend: 1.1,
+    ...NO_FRONT,
+  },
+  baby: BABY_COMMON,
+  features: { duckBill: true, tubeCrest: true },
+  personality: { speed: 0.45, jump: 0.3, curiosity: 0.55, stamina: 0.6, playfulness: 0.5, vocal: 0.85 },
+  variants: [
+    { id: 'reef', name: 'Reef', body: '#5f8fb0', belly: '#e2eef6', pattern: '#3a6385', accent: '#f2a03a', iris: '#2a2a3a', pattern_kind: 'bands' },
+    { id: 'meadow', name: 'Meadow', body: '#7fa25a', belly: '#eef2d2', pattern: '#56753a', accent: '#d9573d', iris: '#2f2a14', pattern_kind: 'stripes' },
+    { id: 'coral', name: 'Coral', body: '#e07a5f', belly: '#ffe8dc', pattern: '#a54c36', accent: '#4fb3a8', iris: '#2a1a14', pattern_kind: 'spots' },
+    { id: 'plum', name: 'Plum', body: '#8a5a8f', belly: '#f0dff2', pattern: '#5e3a63', accent: '#ffd166', iris: '#2a1a2e', pattern_kind: 'saddle' },
+    { id: 'sunny', name: 'Sunny', body: '#e6bf4a', belly: '#fff4cf', pattern: '#a9852a', accent: '#e85d4a', iris: '#3a2a10', pattern_kind: 'bands' },
+    { id: 'shadow', name: 'Shadow', body: '#3f4b5a', belly: '#aab6c4', pattern: '#262e38', accent: '#6fe0ff', iris: '#f0d060', pattern_kind: 'speckles' },
+  ],
+  shiny: { id: 'shiny', name: 'Shiny Sky', body: '#a8d8ff', belly: '#ffffff', pattern: '#6aa9e0', accent: '#ffb3e6', iris: '#ff8a3d', pattern_kind: 'bands' },
+  voice: { pitch: 150, growl: 0.2, kind: 'honk' },
+  lines: {
+    hello: ['HOONK!', 'Hi!'],
+    welcome: ["HONK! You're back!", 'Toot!'],
+    feed: ['Leaves!', 'Yum!'],
+    pet: ['Hmmm.', 'Toot.'],
+    game: ['HOOONK! Go!', 'Good luck!'],
+    gameOver: ['GG!', 'Toot toot!'],
+    sleepy: ['*yawn*'],
+    night: ['Bedtime.'],
+    grow: ['Longer crest!'],
+    thrown: ['Hoonk?!', 'Whoa!'],
+    poke: ['Toot?', 'Hm?'],
+  },
+};
+
+export const GALLI: SpeciesDef = {
+  id: 'galli',
+  name: 'Galli',
+  latin: 'Gallimimus',
+  blurb: 'Long legs, big eyes, zero chill. The fastest runner of them all.',
+  diet: 'herbivore',
+  stance: 'biped',
+  group: 'Ornithomimid',
+  lengthM: 6,
+  fact: 'Built like an ostrich, it was one of the fastest dinosaurs.',
+  food: 'berry',
+  body: {
+    hipHeight: 42,
+    thigh: 20,
+    shin: 23,
+    meta: 14,
+    heel: 11,
+    toe: 7,
+    legW: 8,
+    bodyLen: 22,
+    hipR: 11,
+    chestR: 11,
+    bellyR: 10.5,
+    bellyDrop: 3,
+    pitch: 0.15,
+    neckLen: 26,
+    neckR: 5,
+    neckAngle: 1,
+    headLen: 16,
+    headH: 7.5,
+    snoutH: 5,
+    jawD: 3.5,
+    headAngle: -1,
+    eyeR: 3,
+    eyeX: 0.36,
+    eyeY: 0.66,
+    tailLen: 50,
+    tailR: 8,
+    tailDroop: -0.02,
+    tailStiff: 0.8,
+    armUpper: 10,
+    armFore: 10,
+    armW: 2.6,
+    armAngle: -1.9,
+    armBend: 1.3,
+    ...NO_FRONT,
+  },
+  baby: { ...BABY_COMMON, headLen: 1.4, headH: 1.85, neckLen: 0.6, eyeR: 2.5 },
+  features: { beak: true, feathers: true },
+  personality: { speed: 1, jump: 0.7, curiosity: 0.7, stamina: 0.5, playfulness: 0.8, vocal: 0.6 },
+  variants: [
+    { id: 'plains', name: 'Plains', body: '#c9a97a', belly: '#f6ecd8', pattern: '#8f7148', accent: '#5a7ad9', iris: '#e8a33a', pattern_kind: 'bands' },
+    { id: 'emerald', name: 'Emerald', body: '#4f9a6a', belly: '#e0f2e4', pattern: '#306645', accent: '#ffcc4d', iris: '#f0b030', pattern_kind: 'speckles' },
+    { id: 'flamingo', name: 'Flamingo', body: '#f09aa8', belly: '#fff0f3', pattern: '#c26577', accent: '#ffd166', iris: '#3a1a22', pattern_kind: 'none' },
+    { id: 'ink', name: 'Ink', body: '#2f3542', belly: '#9aa3b5', pattern: '#161a22', accent: '#ff6b6b', iris: '#ffd84a', pattern_kind: 'speckles' },
+    { id: 'lemon', name: 'Lemon', body: '#e8d35a', belly: '#fffbe0', pattern: '#a8962f', accent: '#3fa9f5', iris: '#2a2210', pattern_kind: 'spots' },
+    { id: 'rusty', name: 'Rusty', body: '#b86a3a', belly: '#f7dcc4', pattern: '#7a4020', accent: '#2fb3a0', iris: '#2a1a0e', pattern_kind: 'bands' },
+  ],
+  shiny: { id: 'shiny', name: 'Shiny Prism', body: '#b58cff', belly: '#f5eeff', pattern: '#7a4fe0', accent: '#5ff0d0', iris: '#ffe14a', pattern_kind: 'speckles' },
+  voice: { pitch: 600, growl: 0.15, kind: 'trill' },
+  lines: {
+    hello: ['Hi hi hi!', 'Peep!'],
+    welcome: ["You're back!", 'Peep peep!'],
+    feed: ['Berries!', 'Yum!'],
+    pet: ['Peep.', 'Hehe.'],
+    game: ['Zoom!', 'Go go go!'],
+    gameOver: ['GG!', 'Race?'],
+    sleepy: ['*yawn*'],
+    night: ['Still awake?'],
+    grow: ['Longer legs!'],
+    thrown: ['Wheee!', 'Again!'],
+    poke: ['Peep?', '?'],
+  },
+};
+
+export const BUILT_IN: SpeciesDef[] = [REX, RAPTOR, PACHY, TRIKE, STEGO, ANKY, SPINO, CARNO, DILO, PARASAUR, GALLI];
 
 // ---------------- mods ----------------
 
 const BODY_KEYS = Object.keys(REX.body) as BodyKey[];
-const FEATURE_KEYS: (keyof Features)[] = ['teeth', 'brow', 'feathers', 'crest', 'dome', 'horns', 'sail', 'spikes', 'sickleClaw', 'beak'];
+const FEATURE_KEYS: (keyof Features)[] = ['teeth', 'brow', 'feathers', 'crest', 'dome', 'horns', 'sail', 'spikes', 'sickleClaw', 'beak', 'frill', 'browHorns', 'noseHorn', 'plates', 'thagomizer', 'armor', 'club', 'tubeCrest', 'twinCrests', 'crocSnout', 'duckBill', 'finTail'];
+const FOODS: Food[] = ['meat', 'fish', 'leaf', 'berry'];
 const PERSONALITY_KEYS: (keyof Personality)[] = ['speed', 'jump', 'curiosity', 'stamina', 'playfulness', 'vocal'];
 const LINE_EVENTS: LineEvent[] = ['hello', 'welcome', 'feed', 'pet', 'game', 'gameOver', 'sleepy', 'night', 'grow', 'thrown', 'poke'];
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -404,6 +1070,7 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
       const key = k as BodyKey;
       // Angles are offsets in radians; everything else is a size multiplier.
       if (key === 'pitch' || key === 'neckAngle' || key === 'headAngle' || key === 'tailDroop' || key === 'armAngle' || key === 'armBend') body[key] = base.body[key] + clamp(v, -0.8, 0.8);
+      else if (base.stance === 'biped' && (key === 'shoulderHeight' || key === 'fThigh' || key === 'fShin' || key === 'fMeta' || key === 'fLegW')) continue;
       else if (key === 'tailStiff') body[key] = clamp(v, 0, 1);
       else if (key === 'eyeX' || key === 'eyeY') body[key] = clamp(v, 0.15, 0.85);
       else body[key] = base.body[key] * clamp(v, 0.4, 2.5);
@@ -483,6 +1150,8 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
 
   const diet = m.diet === undefined ? base.diet : m.diet;
   if (diet !== 'carnivore' && diet !== 'herbivore') throw new ModError('"diet" must be carnivore or herbivore');
+  const food = m.food === undefined ? (m.diet === undefined ? base.food : diet === 'carnivore' ? 'meat' : 'leaf') : m.food;
+  if (!FOODS.includes(food as Food)) throw new ModError(`"food" must be one of ${FOODS.join(', ')}`);
 
   return {
     id,
@@ -494,6 +1163,7 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
     group: base.group,
     lengthM: typeof m.lengthM === 'number' && Number.isFinite(m.lengthM) ? clamp(m.lengthM, 0.2, 60) : base.lengthM,
     fact: m.fact === undefined ? `Made by you, based on ${base.name}.` : text(m.fact, 120, 'fact'),
+    food: food as Food,
     body,
     baby: base.baby,
     features,

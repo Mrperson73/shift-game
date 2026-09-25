@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { dist, rng } from '../../src/pet/math';
 import { applyPose, POSES, type PoseName } from '../../src/pet/poses';
 import { Rig } from '../../src/pet/rig';
-import { BUILT_IN } from '../../src/pet/species';
+import { ANKY, BUILT_IN, STEGO, TRIKE } from '../../src/pet/species';
 
 const finite = (o: unknown): boolean => {
   if (typeof o === 'number') return Number.isFinite(o);
@@ -67,6 +67,43 @@ describe('rig', () => {
         });
       }
       expect(worst, sp.id).toBeLessThan(1.5);
+    }
+  });
+
+  it('walks four-legged species on four planted feet', () => {
+    for (const sp of [TRIKE, STEGO, ANKY]) {
+      for (const g of [0, 1]) {
+        const r = new Rig(sp, g, rng(6));
+        applyPose(r, 'stand');
+        expect(r.s.fronts.length).toBe(2);
+        expect(r.s.arms.length).toBe(0);
+        const v = 30;
+        r.speed = v;
+        let X = 0;
+        for (let i = 0; i < 120; i++) {
+          X += v / 60;
+          r.update(1 / 60);
+        }
+        const planted: number[][] = [[], []];
+        let worst = 0;
+        for (let i = 0; i < 180; i++) {
+          X += v / 60;
+          r.update(1 / 60);
+          r.s.fronts.forEach((l, k) => {
+            // Bone lengths hold and the feet reach the ground.
+            expect(dist(l.hip, l.knee)).toBeCloseTo(r.p.fThigh, 3);
+            if (l.lift < 1e-6) {
+              planted[k].push(X + l.ball.x);
+              expect(dist(l.knee, l.heel), `${sp.id} ${g} reach`).toBeGreaterThan(r.p.fShin - 0.05);
+            } else if (planted[k].length) {
+              worst = Math.max(worst, Math.max(...planted[k]) - Math.min(...planted[k]));
+              planted[k] = [];
+            }
+          });
+        }
+        expect(worst, `${sp.id} ${g}`).toBeLessThan(1.5);
+        expect(r.steps, sp.id).toBeGreaterThan(4);
+      }
     }
   });
 

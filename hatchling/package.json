@@ -1,7 +1,7 @@
 {
   "name": "hatchling",
   "productName": "Hatchling",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A dinosaur that lives on your desktop and grows up with you",
   "main": "dist/main.js",
   "private": true,
@@ -14,8 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "node build.mjs && playwright test",
-    "dist:win": "node build.mjs && electron-builder --win --x64 --publish never",
-    "dist:linux": "node build.mjs && electron-builder --linux --publish never"
+    "dist:win": "node build.mjs && electron-builder --win --x64 --publish never"
   },
   "dependencies": {
     "koffi": "3.3.1"
@@ -92,13 +91,6 @@
       "uninstallDisplayName": "Hatchling",
       "artifactName": "Hatchling-Setup-${version}.${ext}",
       "include": "build/installer.nsh"
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Game",
-      "icon": "build/icon.png"
     },
     "publish": null
   }

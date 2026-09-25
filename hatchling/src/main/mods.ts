@@ -37,44 +37,56 @@ const README = `Hatchling species mods
 ======================
 
 Put .json files in this folder to add your own species. Each one starts from a built-in
-species ("base": "rex", "raptor" or "pachy") and changes its shape, looks and personality.
-Hatchling picks up changes right away; new species show up as eggs when you hatch a new pet.
+species ("base") and changes its shape, looks and personality. Hatchling picks up changes
+right away; new species show up as eggs when you hatch a new pet.
 
 Fields (all optional except id and name):
-  id           short id, a-z 0-9 and -
+  id           short id, a-z 0-9 and - (not one of the built-in ids)
   name         shown on the egg
-  base         rex | raptor | pachy
+  base         rex | raptor | pachy | trike | stego | anky | spino | carno | dilo | parasaur | galli
+               (trike, stego and anky walk on four legs)
+  latin        its scientific name
   blurb        one line about it
+  fact         a fun fact for the egg chooser
+  lengthM      real length in metres
   diet         carnivore | herbivore
+  food         meat | fish | leaf | berry
   proportions  size multipliers, e.g. { "headLen": 1.2, "tailLen": 0.8, "armUpper": 0.5 }
-  features     true/false: teeth, brow, feathers, crest, dome, horns, sail, spikes, sickleClaw, beak
+  features     true/false: teeth, brow, feathers, crest, dome, horns, sail, spikes, sickleClaw,
+               beak, frill, browHorns, noseHorn, plates, thagomizer, armor, club, tubeCrest,
+               twinCrests, crocSnout, duckBill, finTail
   personality  0..1: speed, jump, curiosity, stamina, playfulness, vocal
   variants     colours: [{ "name": "Red", "body": "#a83a2c", "belly": "#f0d0b0",
                             "pattern": "#5a1d16", "accent": "#e8b04a", "iris": "#f3d35a",
-                            "pattern_kind": "stripes" }]   (stripes | spots | bands | none)
-  voice        { "pitch": 120, "growl": 0.8 }
+                            "pattern_kind": "stripes" }]
+               pattern_kind: stripes | bands | spots | rosettes | speckles | saddle | none
+  voice        { "pitch": 120, "growl": 0.8, "kind": "roar" }
+               kind: roar | screech | honk | bellow | hoot | trill
   lines        what it says in "chatty" mode, per event:
                hello, welcome, feed, pet, game, gameOver, sleepy, night, grow, thrown, poke
 
-See carnotaurus.json.example for a complete example (rename it to .json to use it).
-Tip: ask an AI to "write a Hatchling species JSON for a Spinosaurus" and paste this file in.
+See ceratosaurus.json.example for a complete example (rename it to .json to use it).
+Tip: ask an AI to "write a Hatchling species JSON for an Allosaurus" and paste this file in.
 `;
 
 const EXAMPLE = {
-  id: 'carno',
-  name: 'Carno',
-  latin: 'Carnotaurus',
-  base: 'rex',
-  blurb: 'Horned, fast and a little dramatic.',
+  id: 'cerato',
+  name: 'Cerato',
+  latin: 'Ceratosaurus',
+  base: 'carno',
+  blurb: 'A horned hunter with a row of bumps down its back.',
+  fact: 'It had a blade-like horn on its nose and a row of bony bumps along its back.',
+  lengthM: 6,
   diet: 'carnivore',
-  proportions: { headLen: 0.78, headH: 1.05, armUpper: 0.6, armFore: 0.5, thigh: 1.1, shin: 1.15, tailLen: 1.1 },
-  features: { horns: true, brow: true, teeth: true },
-  personality: { speed: 0.8, jump: 0.5, curiosity: 0.6, stamina: 0.6, playfulness: 0.6, vocal: 0.7 },
+  food: 'meat',
+  proportions: { headLen: 1.25, headH: 0.9, armUpper: 1.8, armFore: 2, hipHeight: 0.9, thigh: 0.92, shin: 0.9 },
+  features: { noseHorn: true, horns: true, spikes: true, brow: true, teeth: true },
+  personality: { speed: 0.7, jump: 0.5, curiosity: 0.6, stamina: 0.6, playfulness: 0.6, vocal: 0.7 },
   variants: [
     { name: 'Crimson', body: '#b0473a', belly: '#f0d2b4', pattern: '#6b231c', accent: '#f2c14e', iris: '#f5d76e', pattern_kind: 'stripes' },
-    { name: 'Dusk', body: '#5d4a78', belly: '#d9cde8', pattern: '#352848', accent: '#f08a5d', iris: '#ffd166', pattern_kind: 'spots' },
+    { name: 'Dusk', body: '#5d4a78', belly: '#d9cde8', pattern: '#352848', accent: '#f08a5d', iris: '#ffd166', pattern_kind: 'rosettes' },
   ],
-  voice: { pitch: 140, growl: 0.8 },
+  voice: { pitch: 130, growl: 0.85, kind: 'roar' },
   lines: { hello: ['Hrrk!'], game: ['Charge!'], feed: ['Nom nom.'] },
 };
 
@@ -82,7 +94,7 @@ export function ensureModsFolder(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
   const readme = path.join(dir, 'README.txt');
   if (!fs.existsSync(readme)) fs.writeFileSync(readme, README);
-  const ex = path.join(dir, 'carnotaurus.json.example');
+  const ex = path.join(dir, 'ceratosaurus.json.example');
   if (!fs.existsSync(ex)) fs.writeFileSync(ex, JSON.stringify(EXAMPLE, null, 2));
 }
 

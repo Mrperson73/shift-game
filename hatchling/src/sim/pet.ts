@@ -5,8 +5,8 @@ import { growthOf, stageOf, type Stage } from '../pet/growth';
 import { clamp, type V } from '../pet/math';
 import { applyPose, type PoseName } from '../pet/poses';
 import { Rig } from '../pet/rig';
-import type { LineEvent, SpeciesDef } from '../pet/species';
-import { type Activity, type PetData, type Platform, type Settings, SIZE_SCALE, type Wall } from '../shared/types';
+import type { Food as FoodKind, LineEvent, SpeciesDef } from '../pet/species';
+import { type Activity, type PetData, type Platform, type Settings, SIZE_SCALE, type TrickName, type Wall } from '../shared/types';
 import { type Abilities, GROUND, ground, landingOn, ride, rideWall, route, usable, wallFoot, type World } from './world';
 
 export type EmoteKind = 'heart' | 'hearts' | 'zzz' | 'exclaim' | 'question' | 'note' | 'anger' | 'sweat' | 'stars' | 'food' | 'sparkle';
@@ -22,6 +22,10 @@ export type SimEvent =
   | { type: 'crumbs'; x: number; y: number }
   | { type: 'hatched' }
   | { type: 'grew'; stage: Stage }
+  /** Squash (landing, > 0) or stretch (taking off, < 0) the drawing for a moment. */
+  | { type: 'squash'; amount: number }
+  /** A burst of sparkles around the pet (growing up, shiny). */
+  | { type: 'burst' }
   | { type: 'save' };
 
 export interface Food {
@@ -32,7 +36,19 @@ export interface Food {
   landed: boolean;
   platform: Platform | null;
   left: number;
-  kind: 'meat' | 'leaf';
+  kind: FoodKind;
+}
+
+/** A butterfly that sometimes flutters by; the pet tries to catch it (it never does). */
+export interface Butterfly {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  t: number;
+  /** Colour index (the overlay picks the colours). */
+  hue: number;
+  leaving: boolean;
 }
 
 export interface Ball {
@@ -55,7 +71,7 @@ export type Act =
   | { k: 'egg'; next: number }
   | { k: 'hatch'; t: number }
   | { k: 'idle'; t: number; dur: number; nextLook: number; look: V | null; sniff: number }
-  | { k: 'walk'; toX: number; run: boolean; dur: number; t: number }
+  | { k: 'walk'; toX: number; run: boolean; dur: number; t: number; charge?: boolean }
   | { k: 'travel'; to: Platform; toX: number; purpose: Purpose; run: boolean; t: number; drop: boolean }
   | { k: 'jump'; phase: 'crouch' | 'air'; t: number; tx: number; to: Platform; resume: Act | null }
   | { k: 'fall'; t: number; resume: Act | null; voluntary: boolean }
@@ -74,7 +90,13 @@ export type Act =
   | { k: 'chase'; t: number }
   | { k: 'zoomies'; t: number; laps: number; toX: number }
   | { k: 'tail'; t: number; flip: number }
-  | { k: 'petted'; t: number; last: number; next: number };
+  | { k: 'petted'; t: number; last: number; next: number }
+  | { k: 'dance'; t: number; dur: number; next: number }
+  | { k: 'shake'; t: number }
+  | { k: 'pounce'; phase: 'ready' | 'air'; t: number; wait: number; tx: number }
+  | { k: 'paw'; t: number; charge: boolean; next: number }
+  | { k: 'sneeze'; t: number; done: boolean }
+  | { k: 'hunt'; t: number; snap: number };
 
 export interface Env {
   rand: () => number;
@@ -117,6 +139,7 @@ export class Pet {
   hidden = false;
   foods: Food[] = [];
   ball: Ball | null = null;
+  butterfly: Butterfly | null = null;
 
   time = 0;
   private grabOff: V = { x: 0, y: 0 };
@@ -134,6 +157,11 @@ export class Pet {
   private prevVx = 0;
   private hiddenFor = 0;
   private thrown = false;
+  private nextButterfly = 150;
+  private lastSteps = 0;
+  private stepSoundAt = -1e9;
+  private pendingTrick: TrickName | null = null;
+  private curiousFlip = 0;
   egg = { crack: 0, wobble: 0, open: 0, wobbleT: 0 };
 
   constructor(data: PetData, species: SpeciesDef, settings: Settings, world: World, env: Env) {
@@ -150,6 +178,7 @@ export class Pet {
     this.x = clamp(fx * world.width, this.margin, world.width - this.margin);
     this.y = this.platform.y;
     this.act = this.hatched ? this.idleAct(2) : { k: 'egg', next: 2 };
+    this.nextButterfly = 90 + env.rand() * 240;
     applyPose(this.rig, 'stand');
     // Coming back after a long time away: rested, a bit hungry.
     const away = (env.now() - data.lastSeen) / 1000;
@@ -300,7 +329,7 @@ export class Pet {
     if (h) {
       this.hiddenFor = 0;
       if (this.held) this.release();
-    } else if (this.hiddenFor > 120 && this.hatched && this.act.k !== 'sleep') this.react('welcome');
+    } else if (this.hiddenFor > 120 && this.hatched && this.act.k !== 'sleep' && this.act.k !== 'wake') this.react('welcome');
   }
 
   /** Whether a point (overlay coordinates) is on the pet. */
@@ -385,7 +414,7 @@ export class Pet {
     this.data.happiness = clamp(this.data.happiness + 0.05, 0, 1);
     this.act = { k: 'petted', t: 0, last: this.time, next: 0 };
     this.say('pet');
-    this.sound('happy');
+    this.sound('purr');
     this.events.push({ type: 'save' });
   }
 
@@ -446,8 +475,9 @@ export class Pet {
     const s = this.px;
     const off = (60 + this.env.rand() * 120) * Math.max(0.7, s) * this.facing;
     const x = clamp(this.x + off, 30, w.width - 30);
-    this.foods.push({ id: this.nextFoodId++, x, y: 0, vy: 0, landed: false, platform: null, left: 1, kind: this.species.diet === 'carnivore' ? 'meat' : 'leaf' });
+    this.foods.push({ id: this.nextFoodId++, x, y: 0, vy: 0, landed: false, platform: null, left: 1, kind: this.species.food ?? (this.species.diet === 'carnivore' ? 'meat' : 'leaf') });
     if (this.foods.length > 4) this.foods.shift();
+    this.sound('pop', true);
     if (this.act.k === 'sleep') this.wake(false);
   }
 
@@ -457,7 +487,38 @@ export class Pet {
     const r = Math.max(7, 9 * SIZE_SCALE[this.settings.size]);
     const from = this.cursor && this.cursor.y < w.height - 10 ? this.cursor : { x: clamp(this.x + this.facing * 150, 20, w.width - 20), y: 20 };
     this.ball = { x: from.x, y: Math.min(from.y, w.height - 40), vx: (this.env.rand() - 0.5) * 300, vy: -200, r, angle: 0, quiet: 0, age: 0, held: false };
+    this.sound('pop', true);
     if (this.act.k === 'sleep') this.wake(false);
+  }
+
+  /** A trick asked for from the panel. */
+  trick(name: TrickName) {
+    if (!this.hatched || this.held) return;
+    if (this.act.k === 'sleep') {
+      this.wake(false);
+      this.pendingTrick = name;
+      return;
+    }
+    if (!this.grounded || this.anchored) return;
+    this.vx = 0;
+    switch (name) {
+      case 'dance':
+        this.act = { k: 'dance', t: 0, dur: 5 + this.env.rand() * 2, next: 0.3 };
+        this.sound('happy');
+        break;
+      case 'roar':
+        this.react('roar');
+        break;
+      case 'spin':
+        this.act = { k: 'tail', t: 0, flip: 0 };
+        break;
+      case 'sit':
+        this.act = { k: 'sit', t: 0, dur: 12 + this.env.rand() * 8 };
+        break;
+      case 'shake':
+        this.act = { k: 'shake', t: 0 };
+        break;
+    }
   }
 
   call() {
@@ -485,12 +546,15 @@ export class Pet {
 
   // ---------------- the loop ----------------
 
+  /** Advance by `dt` seconds. Needs and growth use the real time (up to 5 s per call, so a slow
+   * tick while hidden still counts); motion is capped at 0.1 s per step. */
   update(dt: number) {
-    dt = clamp(dt, 0, 0.1);
+    const real = clamp(dt, 0, 5);
+    dt = Math.min(real, 0.1);
     this.time += dt;
-    this.updateNeeds(dt);
+    this.updateNeeds(real);
     if (this.hidden) {
-      this.hiddenFor += dt;
+      this.hiddenFor += real;
       return;
     }
     if (this.rubDecay > 0 && (this.rubDecay -= dt) <= 0) this.rub = 0;
@@ -512,6 +576,68 @@ export class Pet {
     if (!this.held) r.accel = (accel / this.px) * this.facing;
     r.look = this.lookTarget();
     r.update(dt);
+    this.footsteps();
+    this.updateButterfly(dt);
+  }
+
+  /** Dust (and, for big pets, a thud) when a foot lands while running or walking heavily. */
+  private footsteps() {
+    const r = this.rig;
+    const n = r.steps - this.lastSteps;
+    this.lastSteps = r.steps;
+    if (n <= 0 || !this.grounded || this.rot !== 0) return;
+    const heavy = r.p.hipR * r.size * SIZE_SCALE[this.settings.size] >= 14;
+    const running = r.run > 0.5;
+    if (!heavy && !running) return;
+    const foot = this.toWorld({ x: r.stepX, y: 0 });
+    if (running || this.env.rand() < 0.5) this.events.push({ type: 'dust', x: foot.x, y: this.y, big: false });
+    if (heavy && this.time - this.stepSoundAt > 0.22) {
+      this.stepSoundAt = this.time;
+      this.sound('step', true);
+    }
+  }
+
+  private updateButterfly(dt: number) {
+    const b = this.butterfly;
+    if (!b) {
+      const calm = this.grounded && !this.asleep && this.act.k !== 'eat' && this.act.k !== 'held' && !this.ball;
+      if (calm && (this.nextButterfly -= dt) <= 0) this.spawnButterfly();
+      return;
+    }
+    b.t += dt;
+    const r = this.env.rand;
+    const w = this.world;
+    if (b.leaving || b.t > 30) {
+      b.leaving = true;
+      b.vy -= 260 * dt;
+      b.vx += (b.x < w.width / 2 ? -1 : 1) * 120 * dt;
+    } else {
+      // Flutter around a point above the pet, with a lot of randomness.
+      const tx = this.x + Math.sin(b.t * 0.6) * 140;
+      const ty = this.y - this.heightPx * (1.5 + 0.6 * Math.sin(b.t * 1.1)) - 20;
+      b.vx += ((tx - b.x) * 0.9 + (r() - 0.5) * 900) * dt;
+      b.vy += ((ty - b.y) * 0.9 + (r() - 0.5) * 900 - 60 * Math.sin(b.t * 9)) * dt;
+    }
+    const sp = Math.hypot(b.vx, b.vy);
+    const max = b.leaving ? 320 : 170;
+    if (sp > max) {
+      b.vx *= max / sp;
+      b.vy *= max / sp;
+    }
+    b.vx *= 1 - dt * 0.8;
+    b.vy *= 1 - dt * 0.8;
+    b.x += b.vx * dt;
+    b.y = Math.min(b.y + b.vy * dt, this.y - 12);
+    if (b.leaving && (b.y < -60 || b.x < -60 || b.x > w.width + 60)) {
+      this.butterfly = null;
+      this.nextButterfly = 240 + r() * 480;
+    }
+  }
+
+  private spawnButterfly() {
+    const w = this.world;
+    const fromLeft = this.x > w.width / 2 ? this.env.rand() < 0.3 : this.env.rand() < 0.7;
+    this.butterfly = { x: fromLeft ? -30 : w.width + 30, y: Math.max(40, this.y - this.heightPx * 2.5 - 60), vx: fromLeft ? 120 : -120, vy: 0, t: 0, hue: Math.floor(this.env.rand() * 4), leaving: false };
   }
 
   private updateNeeds(dt: number) {
@@ -549,14 +675,15 @@ export class Pet {
     const a = this.act;
     const px = this.px;
     const toLocal = (p: V): V => ({ x: ((p.x - this.x) / px) * this.facing, y: (this.y - p.y) / px });
-    if (a.k === 'eat' || a.k === 'sleep' || a.k === 'climb' || a.k === 'move') return null;
+    if (a.k === 'eat' || a.k === 'sleep' || a.k === 'climb' || a.k === 'move' || a.k === 'paw' || a.k === 'sneeze' || a.k === 'shake') return null;
     if (a.k === 'idle' && a.look) return a.look;
+    if (this.butterfly && (a.k === 'hunt' || a.k === 'watch' || a.k === 'idle' || a.k === 'sit')) return toLocal(this.butterfly);
     if (this.ball && (a.k === 'chase' || a.k === 'travel')) return toLocal(this.ball);
     if (this.cursor) {
       const d = Math.hypot(this.cursor.x - this.x, this.cursor.y - this.y);
       const near = d < 420 + 260 * this.species.personality.curiosity;
       const inFront = (this.cursor.x - this.x) * this.facing > -20;
-      if ((near && inFront) || a.k === 'watch' || a.k === 'petted' || a.k === 'held' || (a.k === 'react' && a.kind !== 'roar')) return toLocal(this.cursor);
+      if ((near && inFront) || a.k === 'watch' || a.k === 'petted' || a.k === 'held' || a.k === 'pounce' || a.k === 'dance' || (a.k === 'react' && a.kind !== 'roar')) return toLocal(this.cursor);
     }
     return null;
   }
@@ -643,13 +770,16 @@ export class Pet {
     this.vx *= 0.2;
     this.wantDrop = false;
     const hard = this.thrown && impact > 1300;
+    const wasThrown = this.thrown;
     this.thrown = false;
-    this.events.push({ type: 'dust', x, y: p.y, big: hard });
+    this.events.push({ type: 'dust', x, y: p.y, big: hard }, { type: 'squash', amount: clamp(impact / 1800, 0.08, 0.35) });
     if (!this.hatched) return;
     if (impact > 700) this.sound('thud', impact < 1100);
     const a = this.act;
     const resume = a.k === 'jump' ? a.resume : a.k === 'fall' ? a.resume : null;
     this.act = { k: 'land', t: 0, hard, resume };
+    // Shaking itself off after being thrown around.
+    if (wasThrown && !hard && !resume && this.env.rand() < 0.45) this.act.resume = { k: 'shake', t: 0 };
   }
 
   // ---------------- food and ball ----------------
@@ -819,12 +949,13 @@ export class Pet {
         this.say(line ?? 'welcome', true);
         break;
       case 'hello':
-        this.sound('chirp');
+        this.sound('call');
         this.say('hello', true);
         break;
       case 'grow':
         this.emote('sparkle');
-        this.sound('roar');
+        this.sound('grow');
+        this.events.push({ type: 'burst' });
         this.say('grow', true);
         break;
       case 'hungry':
@@ -832,7 +963,7 @@ export class Pet {
         this.sound('chirp');
         break;
       case 'chirp':
-        this.sound('chirp', soft);
+        this.sound('call', soft);
         this.emote('note');
         break;
     }
@@ -874,9 +1005,22 @@ export class Pet {
       return;
     }
     const baby = this.rig.baby;
-    const cursorNear = this.cursor && Math.hypot(this.cursor.x - this.x, this.cursor.y - this.y) < 500;
+    const c = this.cursor;
+    const cursorNear = c && Math.hypot(c.x - this.x, c.y - this.y) < 500;
     const others = this.platforms.filter((p) => p.id !== this.platform.id);
     const tired = 1 - d.energy;
+    const b = this.butterfly;
+    if (b && !b.leaving && Math.abs(b.x - this.x) < 600 && d.energy > 0.2 && r() < 0.35 + 0.6 * pers.playfulness) {
+      this.act = { k: 'hunt', t: 0, snap: 0 };
+      return;
+    }
+    // Pounce at a cursor that sits still near its feet.
+    const pl = this.platform;
+    const pounceOk =
+      !!c && this.cursorSpeed < 40 && Math.abs(c.x - this.x) > this.heightPx * 0.8 && Math.abs(c.x - this.x) < this.heightPx * 3.2 + 60 && c.y > pl.y - this.heightPx * 1.8 && c.y < pl.y + 30 && c.x > pl.x1 && c.x < pl.x2;
+    const f = this.species.features;
+    const charger = !!(f.frill || f.dome || f.armor || f.club || f.horns || f.browHorns);
+    const loud = this.species.voice.kind === 'roar' || this.species.voice.kind === 'bellow' || this.species.voice.kind === 'honk';
     const options: [number, () => void][] = [
       [3, () => (this.act = this.idleAct(3 + r() * 6))],
       [3.2 * mul * (0.5 + d.energy), () => this.wander(false)],
@@ -887,7 +1031,12 @@ export class Pet {
       [others.length && this.settings.explore ? 1.3 * pers.jump * mul * d.energy : 0, () => this.explore(others)],
       [0.35 * pers.playfulness * mul * (0.3 + baby) * d.energy, () => (this.act = { k: 'tail', t: 0, flip: 0 })],
       [d.happiness > 0.6 && d.energy > 0.55 ? 0.3 * pers.playfulness * mul : 0, () => (this.act = { k: 'zoomies', t: 0, laps: 2 + Math.floor(r() * 3), toX: this.x })],
-      [0.25 * pers.vocal, () => this.react(this.growth > 0.5 && this.species.id !== 'raptor' ? 'roar' : 'chirp', undefined, true)],
+      [0.25 * pers.vocal, () => this.react(this.growth > 0.5 && loud ? 'roar' : 'chirp', undefined, true)],
+      [d.happiness > 0.7 && d.energy > 0.4 ? 0.3 * pers.playfulness * mul : 0, () => (this.act = { k: 'dance', t: 0, dur: 3.5 + r() * 2.5, next: 0.4 })],
+      [pounceOk ? 1.6 * pers.curiosity * pers.playfulness * mul * d.energy : 0, () => (this.act = { k: 'pounce', phase: 'ready', t: 0, wait: 0.8 + r() * 0.7, tx: c!.x })],
+      [0.3 * (charger ? 1 : 0.4) * mul * d.energy, () => (this.act = { k: 'paw', t: 0, charge: charger && d.energy > 0.4 && r() < 0.6, next: 0.2 })],
+      [0.06, () => (this.act = { k: 'sneeze', t: 0, done: false })],
+      [0.1, () => (this.act = { k: 'shake', t: 0 })],
     ];
     const total = options.reduce((s, [w]) => s + Math.max(0, w), 0);
     let pick = r() * total;
@@ -950,7 +1099,7 @@ export class Pet {
     const r = this.env.rand;
     const rig = this.rig;
     rig.run = 0;
-    if (a.k !== 'walk' && a.k !== 'travel' && a.k !== 'chase' && a.k !== 'zoomies' && this.grounded) this.vx *= Math.max(0, 1 - dt * 12);
+    if (a.k !== 'walk' && a.k !== 'travel' && a.k !== 'chase' && a.k !== 'zoomies' && a.k !== 'hunt' && this.grounded) this.vx *= Math.max(0, 1 - dt * 12);
     this.wantDrop = a.k === 'travel' && a.drop;
     switch (a.k) {
       case 'egg':
@@ -958,13 +1107,21 @@ export class Pet {
         return;
       case 'idle': {
         a.t += dt;
-        this.pose(a.sniff > 0 ? 'sniff' : 'stand');
-        if (a.sniff > 0) a.sniff -= dt;
+        this.pose(a.sniff > 0 ? 'sniff' : a.sniff < 0 ? 'yawn' : 'stand');
+        if (a.sniff > 0) a.sniff = Math.max(0, a.sniff - dt);
+        else if (a.sniff < 0) a.sniff = Math.min(0, a.sniff + dt);
         if ((a.nextLook -= dt) <= 0) {
           a.nextLook = 1.2 + r() * 2.8;
           const k = r();
           a.look = k < 0.35 ? null : k < 0.55 ? { x: 60 + r() * 60, y: 60 + r() * 60 } : k < 0.75 ? { x: 80, y: r() * 20 } : { x: -40, y: 70 };
-          if (k > 0.92) a.sniff = 1.4;
+          if (k > 0.92) {
+            a.sniff = 1.4;
+            this.sound('sniff', true);
+          } else if (k < 0.1 && this.data.energy < 0.3) {
+            // Tired: a big yawn (negative sniff time means yawning).
+            a.sniff = -1.6;
+            this.sound('yawn', true);
+          }
           if (k > 0.97 && r() < 0.5) this.facing = this.facing === 1 ? -1 : 1;
         }
         if (a.t > a.dur) this.choose();
@@ -973,8 +1130,15 @@ export class Pet {
       case 'walk':
         a.t += dt;
         rig.run = a.run ? 1 : 0;
-        this.pose('stand');
-        if (this.walkTo(a.toX, a.run, dt) || a.t > a.dur) this.act = this.idleAct(1 + r() * 3);
+        this.pose('stand', a.charge ? { neck: -0.25, head: -0.25, tailLift: 0.25, pitch: -0.05 } : undefined);
+        if (this.walkTo(a.toX, a.run, dt) || a.t > a.dur) {
+          if (a.charge) {
+            // Skid to a stop.
+            this.events.push({ type: 'dust', x: this.x + this.facing * this.margin, y: this.y, big: true });
+            this.sound('thud', true);
+          }
+          this.act = this.idleAct(1 + r() * 3);
+        }
         return;
       case 'travel': {
         a.t += dt;
@@ -1114,7 +1278,8 @@ export class Pet {
             this.grounded = false;
             a.phase = 'air';
             a.t = 0;
-            this.events.push({ type: 'dust', x: this.x, y: this.y, big: false });
+            this.events.push({ type: 'dust', x: this.x, y: this.y, big: false }, { type: 'squash', amount: -0.12 });
+            if (h1 > this.heightPx * 1.5) this.sound('whoosh', true);
           }
         } else this.pose('jump');
         return;
@@ -1169,13 +1334,20 @@ export class Pet {
         a.t += dt;
         this.pose(a.t < 1.3 ? 'stretch' : a.t < 2.2 ? 'yawn' : 'stand');
         if (a.t > 2.5) {
-          if (a.welcome) this.react('welcome');
+          const trick = this.pendingTrick;
+          this.pendingTrick = null;
+          if (trick) this.trick(trick);
+          else if (a.welcome) this.react('welcome');
+          else if (r() < 0.35) this.act = { k: 'shake', t: 0 };
           else this.act = this.idleAct(1);
         }
         return;
       case 'watch':
         a.t += dt;
-        this.pose('alert');
+        if (this.cursor && this.cursorSpeed < 30 && Math.hypot(this.cursor.x - this.x, this.cursor.y - this.y) < 360) {
+          if ((this.curiousFlip -= dt) <= 0) this.curiousFlip = 1.4 + r() * 1.2;
+          this.pose('curious', { tilt: this.curiousFlip > 0.8 ? 0.3 : -0.12 });
+        } else this.pose('alert');
         if (this.cursor) {
           const dirn = this.cursor.x > this.x ? 1 : -1;
           if (dirn !== this.facing && Math.abs(this.cursor.x - this.x) > this.margin) this.facing = dirn;
@@ -1229,6 +1401,7 @@ export class Pet {
           this.data.happiness = clamp(this.data.happiness + 0.15, 0, 1);
           this.data.stats.meals++;
           this.events.push({ type: 'save' });
+          this.sound('gulp');
           this.say('feed');
           this.react('happy');
         }
@@ -1294,11 +1467,128 @@ export class Pet {
         a.t += dt;
         this.pose('happy', { tailWag: 0.45 });
         if ((a.next -= dt) <= 0) {
-          a.next = 0.9;
+          a.next = 1.1;
           this.emote('heart');
+          if (a.t > 0.5) this.sound('purr', true);
         }
         if (this.time - a.last > 1.4) this.act = this.idleAct(1.5);
         return;
+      case 'dance':
+        a.t += dt;
+        this.pose('dance');
+        if ((a.next -= dt) <= 0) {
+          a.next = 1.1;
+          this.emote('note');
+          if (r() < 0.35) this.facing = this.facing === 1 ? -1 : 1;
+        }
+        if (a.t > a.dur) this.act = this.idleAct(1 + r());
+        return;
+      case 'shake':
+        if (a.t === 0) this.events.push({ type: 'dust', x: this.x, y: this.y, big: false });
+        a.t += dt;
+        this.pose(a.t < 1.1 ? 'shake' : 'stand');
+        if (a.t > 1.4) this.act = this.idleAct(1 + r());
+        return;
+      case 'paw':
+        a.t += dt;
+        this.pose('paw');
+        if ((a.next -= dt) <= 0) {
+          a.next = 0.45;
+          this.events.push({ type: 'dust', x: this.x - this.facing * this.margin * 0.6, y: this.y, big: false });
+        }
+        if (a.t > 1.7) {
+          if (a.charge) {
+            const p = this.platform;
+            const m = this.margin * 0.7;
+            const toX = clamp(this.x + this.facing * (180 + r() * 180) * Math.max(0.7, this.px), p.x1 + m, p.x2 - m);
+            if (Math.abs(toX - this.x) > 60) {
+              this.act = { k: 'walk', toX, run: true, dur: 6, t: 0, charge: true };
+              this.sound('growl', true);
+              return;
+            }
+          }
+          this.act = this.idleAct(1 + r() * 2);
+        }
+        return;
+      case 'sneeze':
+        a.t += dt;
+        this.pose(a.t < 0.7 ? 'sneeze_in' : a.t < 1.05 ? 'sneeze_out' : 'stand');
+        if (!a.done && a.t >= 0.7) {
+          a.done = true;
+          this.sound('sneeze');
+          const m = this.mouthAt();
+          this.events.push({ type: 'dust', x: m.x + this.facing * 6, y: Math.min(this.y, m.y + 4), big: false });
+        }
+        if (a.t > 1.5) this.act = this.idleAct(1 + r());
+        return;
+      case 'pounce': {
+        a.t += dt;
+        if (a.phase === 'ready') {
+          this.pose('pounce');
+          if (this.cursor) {
+            a.tx = this.cursor.x;
+            const dirn = a.tx > this.x ? 1 : -1;
+            if (dirn !== this.facing) this.facing = dirn;
+          }
+          if (a.t > a.wait) {
+            // Leap at where the cursor was.
+            const p = this.platform;
+            const m = this.margin * 0.5;
+            const reach = this.heightPx * 3.2;
+            const tx = clamp(a.tx, Math.max(p.x1 + m, this.x - reach), Math.min(p.x2 - m, this.x + reach));
+            const h = this.heightPx * (0.6 + 0.5 * this.species.personality.jump);
+            const t = 2 * Math.sqrt((2 * h) / G);
+            this.vy = -Math.sqrt(2 * G * h);
+            this.vx = (tx - this.x) / t;
+            this.grounded = false;
+            a.phase = 'air';
+            this.events.push({ type: 'dust', x: this.x, y: this.y, big: false }, { type: 'squash', amount: -0.16 });
+            this.sound('whoosh');
+          }
+        } else this.pose('jump', { jaw: 0.6, arms: 0.9 });
+        return;
+      }
+      case 'hunt': {
+        a.t += dt;
+        const b = this.butterfly;
+        if (!b || b.leaving || a.t > 16) {
+          if (b && b.leaving) this.emote(r() < 0.5 ? 'note' : 'question');
+          this.act = this.idleAct(1 + r() * 2);
+          return;
+        }
+        const dx = b.x - this.x;
+        const high = this.y - b.y;
+        const reach = this.heightPx * (1.2 + 1.6 * this.species.personality.jump);
+        if (a.snap > 0) {
+          // Snapping at it: jaws wide, then a miss.
+          a.snap -= dt;
+          this.pose('look_up', { jaw: a.snap > 0.2 ? 0.9 : 0.1 });
+          if (a.snap <= 0) {
+            b.leaving = true;
+            b.vy = -260;
+            b.vx = (dx >= 0 ? 1 : -1) * 150;
+          }
+          return;
+        }
+        this.pose(high > this.heightPx * 1.4 ? 'look_up' : 'alert', { tailWag: 0.2 });
+        rig.run = Math.abs(dx) > 160 ? 1 : 0;
+        if (Math.abs(dx) > this.margin * 0.6) this.walkTo(clamp(b.x, this.platform.x1 + this.margin, this.platform.x2 - this.margin), rig.run > 0, dt);
+        else this.vx *= 0.8;
+        if (Math.abs(dx) < this.margin * 1.4 && high < reach && a.t > 2) {
+          if (this.species.personality.jump > 0.3) {
+            this.vy = -Math.sqrt(2 * G * Math.max(20, high - this.heightPx * 0.6));
+            this.grounded = false;
+            this.act = { k: 'fall', t: 0, resume: null, voluntary: true };
+            b.leaving = true;
+            b.vy = -300;
+            this.sound('whoosh', true);
+          } else {
+            a.snap = 0.45;
+            this.sound('chirp', true);
+          }
+        }
+        return;
+      }
     }
   }
 

@@ -1,5 +1,6 @@
 // Little effects around the pet, as DOM elements: emotes, speech bubbles, dust and crumbs.
 
+import type { Food } from '../pet/species';
 import type { EmoteKind } from '../sim/pet';
 
 const HEART = '<path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 5 6.4 5c2.1 0 3.6 1.2 4.6 2.7C12 6.2 13.5 5 15.6 5 19 5 21.1 8.4 19.6 11.8 17.5 16.4 12 21 12 21z" fill="#ff5c8a" stroke="#7a1f3d" stroke-width="1.6" stroke-linejoin="round"/>';
@@ -118,14 +119,61 @@ export class Fx {
     }
   }
 
+  /** A ring and a shower of stars (growing up, recolouring). */
+  burst(x: number, y: number, scale: number) {
+    const ring = this.el('ring', x, y);
+    const size = 60 * scale;
+    ring.style.width = ring.style.height = `${size}px`;
+    ring.addEventListener('animationend', () => ring.remove());
+    const n = 10;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
+      const d = (45 + Math.random() * 35) * scale;
+      const r = 5 + Math.random() * 4;
+      const star = this.el('spark', x, y, `<svg viewBox="-10 -10 20 20" width="${r * 2}" height="${r * 2}">${STAR(0, 0, 9, i % 2 ? '#fff3a8' : '#ffd34d')}</svg>`);
+      star.animate(
+        [
+          { transform: 'translate(-50%, -50%) scale(0.2)', opacity: 1 },
+          { transform: `translate(calc(-50% + ${Math.cos(a) * d}px), calc(-50% + ${Math.sin(a) * d - 10}px)) scale(1) rotate(90deg)`, opacity: 1, offset: 0.7 },
+          { transform: `translate(calc(-50% + ${Math.cos(a) * d * 1.15}px), calc(-50% + ${Math.sin(a) * d + 6}px)) scale(0.6) rotate(140deg)`, opacity: 0 },
+        ],
+        { duration: 900 + Math.random() * 300, easing: 'cubic-bezier(.2,.8,.3,1)' },
+      ).onfinish = () => star.remove();
+    }
+  }
+
+  /** A single twinkle (shiny pets sparkle now and then). */
+  twinkle(x: number, y: number) {
+    const d = this.el('twinkle', x, y, '<svg viewBox="-10 -10 20 20" width="14" height="14"><path d="M0-9C1-2 2-1 9 0 2 1 1 2 0 9-1 2-2 1-9 0-2-1-1-2 0-9Z" fill="#fffbe6" stroke="#ffd34d" stroke-width="1"/></svg>');
+    d.addEventListener('animationend', () => d.remove());
+  }
+
   clear() {
     this.root.querySelectorAll('.fx').forEach((e) => e.remove());
     this.bubble = null;
   }
 }
 
+const BUTTERFLY_COLOURS = [
+  ['#ff9a3c', '#6b2d0c', '#ffd9a8'],
+  ['#58a8ff', '#1b3f78', '#cfe6ff'],
+  ['#ffd84a', '#7a5a0a', '#fff4bf'],
+  ['#ff7ac8', '#7a1f55', '#ffd3ec'],
+];
+
+/** A little butterfly; its wings flap with a CSS animation, so moving it costs nothing to draw. */
+export function butterflyEl(hue: number): HTMLDivElement {
+  const [wing, edge, spot] = BUTTERFLY_COLOURS[hue % BUTTERFLY_COLOURS.length];
+  const half = (side: 1 | -1) =>
+    `<g class="wing ${side > 0 ? 'r' : 'l'}"><path d="M0 0C${side * 3} -9 ${side * 13} -11 ${side * 12} -3C${side * 11} 1 ${side * 4} 1 0 0Z" fill="${wing}" stroke="${edge}" stroke-width="1.2"/><path d="M0 0C${side * 2} 4 ${side * 8} 9 ${side * 9} 4C${side * 9} 1 ${side * 4} 0.5 0 0Z" fill="${wing}" stroke="${edge}" stroke-width="1.2"/><circle cx="${side * 7}" cy="-4" r="1.6" fill="${spot}"/></g>`;
+  const d = document.createElement('div');
+  d.className = 'butterfly';
+  d.innerHTML = `<svg viewBox="-14 -12 28 24" width="26" height="22">${half(-1)}${half(1)}<ellipse cx="0" cy="0" rx="1.3" ry="5" fill="#2a2030"/><path d="M-0.5-4.5-3-9M0.5-4.5 3-9" stroke="#2a2030" stroke-width="0.9" fill="none" stroke-linecap="round"/></svg>`;
+  return d;
+}
+
 /** Food and ball sprites, drawn once. */
-export function foodSprite(kind: 'meat' | 'leaf', size: number): HTMLCanvasElement {
+export function foodSprite(kind: Food, size: number): HTMLCanvasElement {
   const dpr = window.devicePixelRatio || 1;
   const c = document.createElement('canvas');
   c.width = c.height = Math.ceil(size * dpr);
@@ -152,6 +200,53 @@ export function foodSprite(kind: 'meat' | 'leaf', size: number): HTMLCanvasEleme
     g.beginPath();
     g.ellipse(8, 11.5, 3.5, 1.8, -0.6, 0, Math.PI * 2);
     g.fill();
+  } else if (kind === 'fish') {
+    g.strokeStyle = '#1f3d5c';
+    g.fillStyle = '#7fb6e6';
+    g.beginPath();
+    g.moveTo(17, 14);
+    g.lineTo(23, 9);
+    g.lineTo(22, 19);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    g.beginPath();
+    g.ellipse(10.5, 14, 8.5, 5, 0, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#d9ecff';
+    g.beginPath();
+    g.ellipse(9.5, 16, 5.5, 2, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#1f3d5c';
+    g.beginPath();
+    g.arc(5.5, 12.8, 1.2, 0, Math.PI * 2);
+    g.fill();
+  } else if (kind === 'berry') {
+    g.fillStyle = '#5aa83a';
+    g.strokeStyle = '#2d5a1c';
+    g.beginPath();
+    g.moveTo(12, 8);
+    g.quadraticCurveTo(15, 1, 22, 3);
+    g.quadraticCurveTo(18, 9, 12, 8);
+    g.fill();
+    g.stroke();
+    g.strokeStyle = '#4a1030';
+    for (const [x, y, c] of [
+      [8, 15, '#d8325a'],
+      [15, 16, '#b0204a'],
+      [11.5, 10.5, '#e84a6a'],
+    ] as const) {
+      g.fillStyle = c;
+      g.beginPath();
+      g.arc(x, y, 4.6, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.beginPath();
+      g.arc(x - 1.5, y - 1.5, 1.2, 0, Math.PI * 2);
+      g.fill();
+    }
   } else {
     g.fillStyle = '#6fbf4a';
     g.strokeStyle = '#2d5a1c';

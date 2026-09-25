@@ -65,6 +65,17 @@ const SKIP_CLASSES = new Set([
   'Internet Explorer_Hidden',
   'NarratorHelperWindow',
   'Windows.Internal.Shell.TabProxyWindow',
+  // Overlays and helper windows that look like windows but aren't anything you can see.
+  'CEF-OSC-WIDGET',
+  'SysShadow',
+  'MSO_BORDEREFFECT_WINDOW_CLASS',
+  'VisualStudioGlowWindow',
+  'Shell_InputSwitchTopLevelWindow',
+  'Chrome_SystemMessageWindow',
+  'DummyDWMListenerWindow',
+  'EdgeUiInputWndClass',
+  'ThumbnailDeviceHelperWnd',
+  'PseudoConsoleWindow',
 ]);
 
 const GW_HWNDNEXT = 2;
@@ -76,6 +87,7 @@ const WS_EX_APPWINDOW = 0x40000;
 const WS_EX_NOACTIVATE = 0x08000000;
 const WS_EX_TRANSPARENT = 0x20;
 const WS_EX_LAYERED = 0x80000;
+const LWA_ALPHA = 2;
 const DWMWA_EXTENDED_FRAME_BOUNDS = 9;
 const DWMWA_CLOAKED = 14;
 const MONITOR_DEFAULTTONEAREST = 2;
@@ -89,6 +101,7 @@ export const PROTOTYPES = {
   IsIconic: 'int __stdcall IsIconic(intptr_t hWnd)',
   GetWindowLongPtrW: 'intptr_t __stdcall GetWindowLongPtrW(intptr_t hWnd, int nIndex)',
   GetWindowRect: 'int __stdcall GetWindowRect(intptr_t hWnd, _Out_ HatchRect *lpRect)',
+  GetLayeredWindowAttributes: 'int __stdcall GetLayeredWindowAttributes(intptr_t hwnd, _Out_ uint32_t *pcrKey, _Out_ uint8_t *pbAlpha, _Out_ uint32_t *pdwFlags)',
   GetWindowTextW: 'int __stdcall GetWindowTextW(intptr_t hWnd, _Out_ uint8_t *lpString, int nMaxCount)',
   GetClassNameW: 'int __stdcall GetClassNameW(intptr_t hWnd, _Out_ uint8_t *lpClassName, int nMaxCount)',
   GetWindowThreadProcessId: 'uint32_t __stdcall GetWindowThreadProcessId(intptr_t hWnd, _Out_ uint32_t *lpdwProcessId)',
@@ -148,6 +161,7 @@ export function openDesktop(): Desktop {
     const IsIconic = user32.func(P.IsIconic);
     const GetWindowLongPtrW = user32.func(P.GetWindowLongPtrW);
     const GetWindowRect = user32.func(P.GetWindowRect);
+    const GetLayeredWindowAttributes = user32.func(P.GetLayeredWindowAttributes);
     const GetWindowTextW = user32.func(P.GetWindowTextW);
     const GetClassNameW = user32.func(P.GetClassNameW);
     const GetWindowThreadProcessId = user32.func(P.GetWindowThreadProcessId);
@@ -179,6 +193,13 @@ export function openDesktop(): Desktop {
       const g: Partial<Rect> = {};
       return GetWindowRect(h, g) ? (g as Rect) : null;
     };
+    /** A layered window that is (almost) fully see-through. */
+    const invisible = (h: number) => {
+      const key = [0];
+      const alpha = [0];
+      const flags = [0];
+      return !!GetLayeredWindowAttributes(h, key, alpha, flags) && (flags[0] & LWA_ALPHA) !== 0 && alpha[0] < 40;
+    };
     const monitorOf = (h: number): Rect | null => {
       const mon = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
       if (!mon) return null;
@@ -202,6 +223,7 @@ export function openDesktop(): Desktop {
           if (ex & WS_EX_TOOLWINDOW && !(ex & WS_EX_APPWINDOW)) continue;
           if (ex & WS_EX_NOACTIVATE) continue;
           if (ex & WS_EX_TRANSPARENT && ex & WS_EX_LAYERED) continue;
+          if (ex & WS_EX_LAYERED && invisible(h)) continue;
           dwmBuf.fill(0);
           if (DwmGetWindowAttribute(h, DWMWA_CLOAKED, dwmBuf, 4) === 0 && dwmBuf.readUInt32LE(0)) continue;
           if (SKIP_CLASSES.has(className(h))) continue;
@@ -209,6 +231,11 @@ export function openDesktop(): Desktop {
           if (!title) continue;
           const r = rectOf(h);
           if (!r || r.right - r.left < 120 || r.bottom - r.top < 60) continue;
+          // A layered window covering a whole screen is an overlay (dimmers, recorders), not a window.
+          if (ex & WS_EX_LAYERED) {
+            const m = monitorOf(h);
+            if (m && r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom) continue;
+          }
           const pid = [0];
           GetWindowThreadProcessId(h, pid);
           out.push({ hwnd: id, ...r, title, pid: pid[0] });
@@ -220,7 +247,9 @@ export function openDesktop(): Desktop {
         if (!h) return null;
         const id = String(h);
         const cls = className(h);
-        const shell = SKIP_CLASSES.has(cls) || exclude.has(id);
+        const ex = Number(GetWindowLongPtrW(h, GWL_EXSTYLE));
+        // Click-through overlays (game bars, FPS counters) are never "the full-screen app".
+        const shell = SKIP_CLASSES.has(cls) || exclude.has(id) || (ex & WS_EX_TRANSPARENT) !== 0 || (ex & WS_EX_LAYERED && invisible(h));
         const r: Partial<Rect> = {};
         const mon = monitorOf(h);
         if (!mon || !GetWindowRect(h, r)) return { hwnd: id, fullscreen: false, monitor: mon ?? { left: 0, top: 0, right: 0, bottom: 0 } };

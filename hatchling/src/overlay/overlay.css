@@ -148,3 +148,68 @@ body.dragging {
   height: 4px;
   border-radius: 1px;
 }
+.ring {
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 3px solid rgba(255, 217, 90, 0.95);
+  box-shadow: 0 0 12px rgba(255, 220, 120, 0.8), inset 0 0 10px rgba(255, 240, 180, 0.7);
+  animation: ring 0.9s ease-out forwards;
+}
+@keyframes ring {
+  from {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(2.4);
+    opacity: 0;
+  }
+}
+.spark {
+  transform: translate(-50%, -50%);
+}
+.spark svg,
+.twinkle svg {
+  display: block;
+}
+.twinkle {
+  transform: translate(-50%, -50%) scale(0);
+  animation: twinkle 0.9s ease-in-out forwards;
+}
+@keyframes twinkle {
+  40% {
+    transform: translate(-50%, -50%) scale(1.1) rotate(30deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0) rotate(80deg);
+    opacity: 0;
+  }
+}
+.butterfly {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+.butterfly svg {
+  display: block;
+  overflow: visible;
+}
+.butterfly .wing {
+  animation: flap 0.19s ease-in-out infinite alternate;
+}
+@keyframes flap {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0.22);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .butterfly .wing {
+    animation-duration: 0.5s;
+  }
+}

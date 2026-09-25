@@ -29,6 +29,14 @@ export const POSES = {
   yawn: { pose: { jaw: 0.9, neck: 0.25, head: 0.5 }, eyes: 'closed', legs: 'gait' },
   look_up: { pose: { neck: 0.45, head: 0.35 }, eyes: 'open', legs: 'gait' },
   land: { pose: { crouch: 1, pitch: -0.1, tailLift: -0.1 }, eyes: 'closed', legs: 'gait' },
+  dance: { pose: { dance: 1, tailLift: 0.25, head: 0.12, neck: 0.1 }, eyes: 'happy', legs: 'gait' },
+  shake: { pose: { shake: 1, neck: 0.05 }, eyes: 'closed', legs: 'gait' },
+  pounce: { pose: { crouch: 1, pitch: -0.18, wiggle: 1, tailLift: 0.3, neck: -0.12, head: 0.2 }, eyes: 'wide', legs: 'gait' },
+  paw: { pose: { paw: 1, neck: -0.15, head: -0.12, tailLift: 0.12 }, eyes: 'open', legs: 'gait' },
+  curious: { pose: { tilt: 0.3, neck: 0.18, head: 0.06 }, eyes: 'wide', legs: 'gait' },
+  sneeze_in: { pose: { neck: 0.35, head: 0.5, jaw: 0.3 }, eyes: 'closed', legs: 'gait' },
+  sneeze_out: { pose: { neck: -0.3, head: -0.5, jaw: 0.75, pitch: -0.08 }, eyes: 'closed', legs: 'gait' },
+  growl: { pose: { neck: -0.08, head: -0.06, jaw: 0.35, tremble: 0.22, tailLift: 0.15 }, eyes: 'angry', legs: 'gait' },
 } satisfies Record<string, PoseDef>;
 
 export type PoseName = keyof typeof POSES;

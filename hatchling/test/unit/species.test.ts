@@ -5,16 +5,16 @@ describe('species mods', () => {
   it('builds a species from a base with multipliers, features and colours', () => {
     const s = parseSpeciesMod(
       {
-        id: 'carno',
-        name: 'Carno',
+        id: 'cerato',
+        name: 'Cerato',
         base: 'rex',
         proportions: { headLen: 0.8, armUpper: 0.5, headAngle: 0.1 },
         features: { horns: true },
         personality: { speed: 0.9 },
         variants: [{ name: 'Red', body: '#AA3322' }],
-        lines: { hello: ['Hi from Carno'] },
+        lines: { hello: ['Hi from Cerato'] },
       },
-      'carno.json',
+      'cerato.json',
     );
     expect(s.body.headLen).toBeCloseTo(REX.body.headLen * 0.8);
     expect(s.body.headAngle).toBeCloseTo(REX.body.headAngle + 0.1);
@@ -22,8 +22,18 @@ describe('species mods', () => {
     expect(s.features.teeth).toBe(true);
     expect(s.personality.speed).toBe(0.9);
     expect(s.variants[0].body).toBe('#aa3322');
-    expect(s.lines.hello).toEqual(['Hi from Carno']);
-    expect(s.mod).toBe('carno.json');
+    expect(s.lines.hello).toEqual(['Hi from Cerato']);
+    expect(s.mod).toBe('cerato.json');
+  });
+
+  it('can start from a four-legged species and pick its food and voice', () => {
+    const s = parseSpeciesMod({ id: 'diablo', name: 'Diablo', base: 'trike', food: 'berry', voice: { kind: 'honk' }, proportions: { fLegW: 1.2 } }, 'd.json');
+    expect(s.stance).toBe('quad');
+    expect(s.food).toBe('berry');
+    expect(s.voice.kind).toBe('honk');
+    expect(s.body.fLegW).toBeGreaterThan(0);
+    expect(() => parseSpeciesMod({ id: 'x', name: 'X', food: 'rocks' }, 'x')).toThrow(/food/);
+    expect(() => parseSpeciesMod({ id: 'x', name: 'X', voice: { kind: 'kazoo' } }, 'x')).toThrow(/kind/);
   });
 
   it('clamps extreme numbers', () => {
@@ -38,7 +48,8 @@ describe('species mods', () => {
     expect(bad([])).toThrow(/JSON object/);
     expect(bad({ id: 'rex', name: 'X' })).toThrow(/built-in/);
     expect(bad({ id: 'Bad Id!', name: 'X' })).toThrow(/a-z/);
-    expect(bad({ id: 'x', name: 'X', base: 'stego' })).toThrow(/base/);
+    expect(bad({ id: 'x', name: 'X', base: 'trex' })).toThrow(/base/);
+    expect(bad({ id: 'carno', name: 'X' })).toThrow(/built-in/);
     expect(bad({ id: 'x', name: 'X', proportions: { wings: 2 } })).toThrow(/Unknown proportion/);
     expect(bad({ id: 'x', name: 'X', features: { laser: true } })).toThrow(/Unknown feature/);
     expect(bad({ id: 'x', name: 'X', variants: [{ body: 'red' }] })).toThrow(/colour/);
@@ -47,9 +58,14 @@ describe('species mods', () => {
   });
 
   it('built-ins are valid shapes', () => {
+    expect(BUILT_IN.length).toBe(11);
+    expect(new Set(BUILT_IN.map((s) => s.id)).size).toBe(BUILT_IN.length);
     for (const s of BUILT_IN) {
-      expect(s.variants.length).toBeGreaterThan(0);
+      expect(s.variants.length, s.id).toBe(6);
+      expect(new Set(s.variants.map((v) => v.id)).size, s.id).toBe(6);
+      expect(s.shiny.body, s.id).toMatch(/^#[0-9a-f]{6}$/);
       for (const v of Object.values(s.body)) expect(Number.isFinite(v)).toBe(true);
+      if (s.stance === 'quad') expect(s.body.shoulderHeight * s.body.fThigh * s.body.fShin * s.body.fLegW, s.id).toBeGreaterThan(0);
     }
   });
 });

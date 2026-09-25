@@ -51,6 +51,9 @@ let game: string | null = null;
 let games = new Set<number>();
 let lastWorld = '';
 let lastCursor = '';
+/** The pet is asleep (it doesn't need to see windows move as often). */
+let petAsleep = false;
+let captureOn = false;
 let statusText = 'Hatchling';
 let quitting = false;
 const timers: NodeJS.Timeout[] = [];
@@ -146,6 +149,18 @@ function createOverlay() {
     overlay = null;
     setTimeout(() => !quitting && createOverlay(), 1500);
   });
+  // Never leave the screen blocked: if the pet's page hangs, let every click through.
+  overlay.on('unresponsive', () => {
+    log('overlay unresponsive');
+    overlay?.setIgnoreMouseEvents(true);
+    captureOn = false;
+  });
+  // Windows is shutting down or logging off (before-quit doesn't fire then): save what we have.
+  overlay.on('query-session-end', () => {
+    sendOverlay('command', { type: 'flush' });
+    save();
+  });
+  overlay.on('session-end', () => save());
   overlay.on('closed', () => (overlay = null));
 }
 
@@ -165,6 +180,36 @@ function setOverlayHidden(h: boolean) {
   else {
     overlay.showInactive();
     overlay.setAlwaysOnTop(true, 'screen-saver');
+    lastWorld = '';
+    pollWorld();
+  }
+}
+
+let lastFg = '';
+let topmostAt = 0;
+
+/** Keeps the pet on screen: re-shows the overlay if something hid it and keeps it above other windows. */
+function watchdog() {
+  if (!overlay || overlay.isDestroyed() || overlayHidden || quitting) return;
+  if (!overlay.isVisible() || overlay.isMinimized()) {
+    log('overlay was hidden by something else; showing it again');
+    overlay.showInactive();
+    overlay.setAlwaysOnTop(true, 'screen-saver');
+    return;
+  }
+  // Apps that go full screen or "always on top" can push it down; put it back on top when the
+  // front window changes, and every half minute anyway.
+  let fg = '';
+  try {
+    fg = desktop.foreground(ownHandles())?.hwnd ?? '';
+  } catch {
+    /* keep going */
+  }
+  const now = Date.now();
+  if (fg !== lastFg || now - topmostAt > 30_000) {
+    lastFg = fg;
+    topmostAt = now;
+    overlay.setAlwaysOnTop(true, 'screen-saver');
   }
 }
 
@@ -175,7 +220,7 @@ let worldTimer: NodeJS.Timeout | null = null;
 let movingUntil = 0;
 
 function pollWorld() {
-  if (!overlay || !display || overlayHidden) return;
+  if (!overlay || !display || overlayHidden || locked) return;
   const wa = display.workArea;
   let update: WorldUpdate = { width: wa.width, height: wa.height, platforms: [], walls: [] };
   if (desktop.available && settings().explore) {
@@ -200,24 +245,37 @@ function pollWorld() {
 
 function scheduleWorld() {
   if (worldTimer) clearTimeout(worldTimer);
-  // Faster while windows are moving, so a pet riding a dragged window keeps up.
-  const hz = Date.now() < movingUntil ? 30 : worldRate;
+  // Faster while windows are moving, so a pet riding a dragged window keeps up; slow while it
+  // sleeps, and not at all while hidden or locked.
+  const idle = overlayHidden || locked || !settings().explore;
+  const hz = Date.now() < movingUntil ? 30 : idle ? 0.5 : petAsleep ? 1 : worldRate;
   worldTimer = setTimeout(() => {
     pollWorld();
     scheduleWorld();
   }, 1000 / hz);
 }
 
+let cursorTimer: NodeJS.Timeout | null = null;
+let cursorMovedAt = 0;
+
+/** Follows the mouse: 30 times a second while it moves, 5 while it rests, never while hidden. */
 function pollCursor() {
-  if (!overlay || !display || overlayHidden) return;
-  const p = screen.getCursorScreenPoint();
-  const wa = display.workArea;
-  const inside = p.x >= wa.x && p.x < wa.x + wa.width && p.y >= wa.y - 60 && p.y < wa.y + wa.height + 60;
-  const local = inside ? { x: p.x - wa.x, y: p.y - wa.y } : null;
-  const key = local ? `${local.x},${local.y}` : 'out';
-  if (key === lastCursor) return;
-  lastCursor = key;
-  sendOverlay('cursor', local);
+  if (cursorTimer) clearTimeout(cursorTimer);
+  const now = Date.now();
+  if (overlay && display && !overlayHidden && !locked) {
+    const p = screen.getCursorScreenPoint();
+    const wa = display.workArea;
+    const inside = p.x >= wa.x && p.x < wa.x + wa.width && p.y >= wa.y - 60 && p.y < wa.y + wa.height + 60;
+    const local = inside ? { x: p.x - wa.x, y: p.y - wa.y } : null;
+    const key = local ? `${local.x},${local.y}` : 'out';
+    if (key !== lastCursor) {
+      lastCursor = key;
+      cursorMovedAt = now;
+      sendOverlay('cursor', local);
+    }
+  }
+  const active = captureOn || now - cursorMovedAt < 3000;
+  cursorTimer = setTimeout(pollCursor, overlayHidden || locked ? 500 : active ? 33 : 200);
 }
 
 let processTick = 0;
@@ -227,9 +285,10 @@ function pollActivity() {
     reloadSpecies();
     watchMods();
   }
-  const idle = powerMonitor.getSystemIdleTime();
+  // The smoke test runs on an idle CI machine; don't let the pet fall asleep there.
+  const idle = SMOKE ? 0 : powerMonitor.getSystemIdleTime();
   const state = powerMonitor.getSystemIdleState(1);
-  if (desktop.available && processTick++ % 3 === 0) {
+  if (desktop.available && processTick++ % 5 === 0) {
     try {
       const procs = desktop.processes();
       const exes = new Set(procs.values());
@@ -248,10 +307,11 @@ function pollActivity() {
 function pollFullscreen() {
   if (!overlay || !display) return;
   let hide = Date.now() < hiddenUntil;
+  // Off by default: the pet stays visible all the time unless you turn this on in Settings.
   if (!hide && settings().hideFullscreen && desktop.available) {
     try {
       const fg = desktop.foreground(ownHandles());
-      if (fg?.fullscreen || (fg && desktop.busy())) {
+      if (fg?.fullscreen) {
         const m = screen.screenToDipRect(null, { x: fg.monitor.left, y: fg.monitor.top, width: fg.monitor.right - fg.monitor.left, height: fg.monitor.bottom - fg.monitor.top });
         const b = display.bounds;
         const same = Math.abs(m.x - b.x) < 4 && Math.abs(m.y - b.y) < 4 && Math.abs(m.width - b.width) < 4;
@@ -265,12 +325,13 @@ function pollFullscreen() {
     fullscreenHidden = hide;
     setOverlayHidden(hide);
   }
+  watchdog();
 }
 
 function startPolling() {
-  timers.push(setInterval(pollCursor, 33));
   timers.push(setInterval(pollActivity, 2000));
-  timers.push(setInterval(pollFullscreen, 1000));
+  timers.push(setInterval(pollFullscreen, 1500));
+  pollCursor();
   scheduleWorld();
   pollActivity();
 }
@@ -465,7 +526,10 @@ function registerIpc() {
     };
   });
   ipcMain.on('overlay:capture', (e, on: boolean) => {
-    if (fromOverlay(e) && overlay) overlay.setIgnoreMouseEvents(!on);
+    if (!fromOverlay(e) || !overlay) return;
+    captureOn = !!on;
+    overlay.setIgnoreMouseEvents(!on);
+    if (on) pollCursor();
   });
   ipcMain.on('overlay:save', (e, p: unknown) => {
     if (!fromOverlay(e) || !store.data.pet) return;
@@ -476,10 +540,11 @@ function registerIpc() {
     save();
     pushPanel();
   });
-  ipcMain.on('overlay:notify', (e, n: { type: string; text?: string }) => {
+  ipcMain.on('overlay:notify', (e, n: { type: string; text?: string; asleep?: boolean }) => {
     if (!fromOverlay(e)) return;
     if (n.type === 'status' && n.text) {
       statusText = String(n.text).slice(0, 80);
+      petAsleep = n.asleep === true;
       rebuildTray();
     } else if (n.type === 'grew' && n.text && Notification.isSupported() && !overlayHidden && !SMOKE) {
       new Notification({ title: `${store.data.pet?.name ?? 'Your pet'} grew up a bit!`, body: `Now a ${String(n.text).toLowerCase()}.`, silent: true }).show();
@@ -498,7 +563,7 @@ function registerIpc() {
     const old = store.data.pet;
     if (old) store.data.history.push({ name: old.name, species: old.species, variant: old.variant, hatchedAt: old.hatchedAt, activeSeconds: old.activeSeconds, retiredAt: Date.now(), shiny: old.shiny, colors: old.colors });
     // About 1 egg in 20 hatches shiny: it starts in its species' shiny colours (and keeps them unlocked).
-    const shiny = Math.random() < 0.05;
+    const shiny = TEST ? process.env.HATCHLING_SHINY === '1' : Math.random() < 0.05;
     store.data.pet = newPet(sp.id, shiny ? -1 : variant, sanitizeName(o.name), Date.now(), shiny);
     store.data.settings = sanitizeSettings({ ...settings(), startWithWindows: !!o.startWithWindows });
     save();
@@ -613,6 +678,7 @@ function finishSmoke(report: Record<string, unknown>) {
     ['food appeared', Number(report.food) > 0],
     ['hit test works', report.hit === true],
     ['landed after being thrown', report.landed === true],
+    ['did a trick', report.danced === true],
     ['fell asleep on command', report.slept === true],
     ['drew the pet', Number(report.ink) > 20],
     ['animated', Number(report.frames) > 30],
@@ -676,18 +742,28 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
   powerMonitor.on('lock-screen', () => {
     locked = true;
     pollActivity();
+    sendOverlay('command', { type: 'flush' });
   });
   powerMonitor.on('unlock-screen', () => {
     locked = false;
     pollActivity();
+    lastWorld = '';
+    pollWorld();
   });
   powerMonitor.on('suspend', () => {
     locked = true;
     pollActivity();
+    sendOverlay('command', { type: 'flush' });
+  });
+  powerMonitor.on('shutdown', () => {
+    sendOverlay('command', { type: 'flush' });
+    save();
   });
   powerMonitor.on('resume', () => {
     locked = false;
     pollActivity();
+    lastWorld = '';
+    pollWorld();
   });
 
   void app.whenReady().then(() => {

@@ -172,6 +172,35 @@ test.describe.serial('Hatchling', () => {
     await expect.poll(async () => (await pet(overlay)).data.stats.games).toBe(1);
   });
 
+  test('tricks and new colours from the panel reach the pet and are saved', async () => {
+    const overlay = await windowBy('overlay');
+    const send = (c: unknown) => app.evaluate((_e, cmd) => (global as unknown as { __hatchling: { sendOverlay: (c: string, p: unknown) => void } }).__hatchling.sendOverlay('command', cmd), c);
+    await send({ type: 'trick', name: 'dance' });
+    await expect.poll(async () => (await pet(overlay)).act).toBe('dance');
+    const colors = { body: '#123456', belly: '#abcdef', pattern: '#0a0b0c', accent: '#ff00aa', iris: '#00ff00', pattern_kind: 'rosettes' };
+    await app.evaluate((_e, c) => {
+      const h = (global as unknown as { __hatchling: { store: { data: { pet: { colors: unknown } } } } }).__hatchling;
+      h.store.data.pet.colors = c;
+    }, colors);
+    await send({ type: 'recolor', variant: 2, colors });
+    await expect.poll(() => overlay.evaluate(() => (window as unknown as { __test: { pet: { data: { colors: { body: string } | null } } } }).__test.pet.data.colors?.body)).toBe('#123456');
+    await expect.poll(() => JSON.parse(fs.readFileSync(path.join(userData, 'hatchling.json'), 'utf8')).pet.colors?.body, { timeout: 15_000 }).toBe('#123456');
+  });
+
+  test('saves power: slow frames while asleep, none while hidden', async () => {
+    const overlay = await windowBy('overlay');
+    const fps = () => overlay.evaluate(() => (window as unknown as { __test: { fps: () => number } }).__test.fps());
+    await overlay.evaluate(() => (window as unknown as { __test: { pet: { sleepNow: () => void } } }).__test.pet.sleepNow());
+    await expect.poll(fps).toBe(10);
+    await app.evaluate(() => (global as unknown as { __hatchling: { sendOverlay: (c: string, p: unknown) => void } }).__hatchling.sendOverlay('hidden', true));
+    await expect.poll(fps).toBe(1);
+    await app.evaluate(() => (global as unknown as { __hatchling: { sendOverlay: (c: string, p: unknown) => void } }).__hatchling.sendOverlay('hidden', false));
+    await overlay.evaluate(() => (window as unknown as { __test: { pet: { wakeNow: () => void } } }).__test.pet.wakeNow());
+    // Full-screen hiding is off by default, so the pet is always visible.
+    const saved = JSON.parse(fs.readFileSync(path.join(userData, 'hatchling.json'), 'utf8'));
+    expect(saved.settings.hideFullscreen).toBe(false);
+  });
+
   test('it survives a restart with everything saved', async () => {
     const overlay = await windowBy('overlay');
     const before = await pet(overlay);

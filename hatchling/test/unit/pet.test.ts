@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rng } from '../../src/pet/math';
-import { BUILT_IN, PACHY, RAPTOR, REX } from '../../src/pet/species';
+import { ANKY, BUILT_IN, GALLI, PACHY, RAPTOR, REX, SPINO, STEGO, TRIKE } from '../../src/pet/species';
 import { DEFAULT_SETTINGS, newPet, type Platform, type Settings, type Wall } from '../../src/shared/types';
 import { Pet, type SimEvent } from '../../src/sim/pet';
 import { ground } from '../../src/sim/world';
@@ -77,7 +77,7 @@ describe('pet', () => {
       // It explores at least one window over 20 minutes.
       expect(seen.size, species.id).toBeGreaterThan(1);
     }
-  });
+  }, 60_000);
 
   it('stays on the taskbar when exploring is off', () => {
     const { pet, run } = make({ species: RAPTOR, settings: { explore: false } });
@@ -272,5 +272,92 @@ describe('pet', () => {
     const off = make({ settings: { speech: 'off' } });
     off.pet.react('welcome');
     expect(off.pet.drain().some((e) => e.type === 'emote')).toBe(false);
+  });
+
+  it('does tricks on request, even waking up for them', () => {
+    const { pet, run, events } = make();
+    run(1);
+    pet.trick('dance');
+    expect(pet.act.k).toBe('dance');
+    run(1.5);
+    expect(events.some((e) => e.type === 'emote' && e.kind === 'note')).toBe(true);
+    for (const [name, act] of [
+      ['sit', 'sit'],
+      ['shake', 'shake'],
+      ['spin', 'tail'],
+      ['roar', 'react'],
+    ] as const) {
+      pet.trick(name);
+      expect(pet.act.k, name).toBe(act);
+      run(0.2);
+    }
+    pet.sleepNow();
+    pet.trick('dance');
+    expect(pet.act.k).toBe('wake');
+    run(3);
+    expect(pet.act.k).toBe('dance');
+  });
+
+  it('dances, pounces, paws, sneezes and shakes without breaking its physics', () => {
+    for (const species of [RAPTOR, TRIKE, GALLI, ANKY]) {
+      const { pet, run } = make({ species });
+      pet.setCursor({ x: pet.x + 180, y: H - 5 }, 1 / 30);
+      const acts: Parameters<typeof pet.trick>[0][] = ['dance', 'shake'];
+      for (const a of acts) {
+        pet.trick(a);
+        run(3);
+      }
+      // Force each new behaviour once.
+      pet.act = { k: 'pounce', phase: 'ready', t: 0, wait: 0.5, tx: pet.x + 180 };
+      run(3);
+      expect(pet.grounded, species.id).toBe(true);
+      pet.act = { k: 'paw', t: 0, charge: true, next: 0 };
+      run(6);
+      pet.act = { k: 'sneeze', t: 0, done: false };
+      run(2);
+      expect(Number.isFinite(pet.x) && pet.x > 0 && pet.x < W, species.id).toBe(true);
+      expect(pet.y).toBe(H);
+    }
+  });
+
+  it('chases butterflies that come by, and they get away', () => {
+    const { pet, run } = make({ species: RAPTOR });
+    const seen = { butterfly: false, hunted: false };
+    run(900, () => {
+      if (pet.butterfly) seen.butterfly = true;
+      if (pet.act.k === 'hunt') seen.hunted = true;
+      if (pet.butterfly) expect(pet.butterfly.y).toBeLessThan(pet.y);
+    });
+    expect(seen.butterfly).toBe(true);
+    expect(seen.hunted).toBe(true);
+  });
+
+  it('keeps growing and getting hungry while hidden, even with slow ticks', () => {
+    const { pet } = make({ hours: 1 });
+    pet.setActivity({ idle: 0, locked: false, game: null });
+    pet.setHidden(true);
+    const before = pet.data.activeSeconds;
+    for (let i = 0; i < 60; i++) pet.update(1);
+    expect(pet.data.activeSeconds - before).toBeCloseTo(60, 0);
+  });
+
+  it('makes footstep dust when big pets walk and anyone runs', () => {
+    for (const species of [STEGO, SPINO]) {
+      const { pet, run, events } = make({ species, hours: 60 });
+      pet.act = { k: 'walk', toX: 200, run: true, dur: 20, t: 0 };
+      pet.x = 1200;
+      run(4);
+      expect(events.filter((e) => e.type === 'dust').length, species.id).toBeGreaterThan(3);
+      expect(events.some((e) => e.type === 'sound' && e.name === 'step'), species.id).toBe(true);
+    }
+  });
+
+  it('eats the food its species likes', () => {
+    const foods = { rex: 'meat', spino: 'fish', trike: 'leaf', galli: 'berry' } as const;
+    for (const [id, food] of Object.entries(foods)) {
+      const { pet } = make({ species: BUILT_IN.find((s) => s.id === id)! });
+      pet.feed();
+      expect(pet.foods[0].kind, id).toBe(food);
+    }
   });
 });

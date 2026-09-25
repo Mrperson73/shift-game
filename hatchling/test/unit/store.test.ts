@@ -43,12 +43,12 @@ describe('store', () => {
 describe('mods folder', () => {
   it('loads good mods and explains bad ones', () => {
     const dir = tmp();
-    fs.writeFileSync(path.join(dir, 'carno.json'), JSON.stringify(_test.EXAMPLE));
+    fs.writeFileSync(path.join(dir, 'cerato.json'), JSON.stringify(_test.EXAMPLE));
     fs.writeFileSync(path.join(dir, 'broken.json'), '{ nope');
     fs.writeFileSync(path.join(dir, 'dupe.json'), JSON.stringify({ ..._test.EXAMPLE }));
     fs.writeFileSync(path.join(dir, 'notes.txt'), 'ignored');
     const { species, problems } = loadMods(dir);
-    expect(species.map((s) => s.id)).toEqual(['carno']);
+    expect(species.map((s) => s.id)).toEqual(['cerato']);
     expect(problems.map((p) => p.file).sort()).toEqual(['broken.json', 'dupe.json']);
     expect(problems.find((p) => p.file === 'broken.json')?.error).toMatch(/JSON/);
   });
@@ -57,8 +57,8 @@ describe('mods folder', () => {
     const dir = path.join(tmp(), 'species');
     ensureModsFolder(dir);
     expect(fs.readFileSync(path.join(dir, 'README.txt'), 'utf8')).toMatch(/base/);
-    const ex = JSON.parse(fs.readFileSync(path.join(dir, 'carnotaurus.json.example'), 'utf8'));
-    expect(parseSpeciesMod(ex, 'x').name).toBe('Carno');
+    const ex = JSON.parse(fs.readFileSync(path.join(dir, 'ceratosaurus.json.example'), 'utf8'));
+    expect(parseSpeciesMod(ex, 'x').name).toBe('Cerato');
     expect(loadMods(dir).species).toEqual([]);
   });
 });

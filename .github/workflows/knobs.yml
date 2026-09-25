@@ -46,11 +46,8 @@ jobs:
 
   package:
     needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    # Windows only: Linux builds are no longer published.
+    runs-on: windows-latest
     permissions:
       contents: read
       id-token: write # build provenance attestation
@@ -67,7 +64,6 @@ jobs:
       # Code signing turns on automatically once the WIN_CSC_LINK (base64 .pfx) and
       # WIN_CSC_KEY_PASSWORD repository secrets exist. Without them the build is unsigned.
       - name: Build Windows installer + portable zip
-        if: runner.os == 'Windows'
         shell: pwsh
         env:
           SIGN_CERT: ${{ secrets.WIN_CSC_LINK }}
@@ -78,7 +74,6 @@ jobs:
           npm run dist:win
 
       - name: Install, launch and uninstall on Windows
-        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -101,34 +96,25 @@ jobs:
           if (Test-Path $exe) { throw 'uninstaller left Knobs.exe behind' }
           'install -> launch -> uninstall OK'
 
-      - name: Build Linux AppImage
-        if: runner.os == 'Linux'
-        run: npm run dist:linux
 
       - name: Checksums
         shell: bash
         run: |
           cd release
-          sha256sum *.exe *.zip *.AppImage 2>/dev/null > "SHA256SUMS-${RUNNER_OS}.txt" || true
-          cat "SHA256SUMS-${RUNNER_OS}.txt"
-          test -s "SHA256SUMS-${RUNNER_OS}.txt"
+          sha256sum *.exe *.zip > SHA256SUMS-Windows.txt
+          cat SHA256SUMS-Windows.txt
 
       # Signed record that these files were built by this workflow from this commit.
       # Verify with: gh attestation verify <file> -R Mrperson73/shift-game
       - uses: actions/attest-build-provenance@v2
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && runner.os == 'Windows'
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         with:
           subject-path: |
             knobs/release/Knobs-Setup-*.exe
             knobs/release/Knobs-Portable-*.zip
-      - uses: actions/attest-build-provenance@v2
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && runner.os == 'Linux'
-        with:
-          subject-path: knobs/release/*.AppImage
 
       # One artifact per download so nothing ends up zipped inside another zip.
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'Windows'
         with:
           name: Knobs-Setup-Windows
           path: |
@@ -137,19 +123,9 @@ jobs:
           compression-level: 0
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'Windows'
         with:
           name: Knobs-Portable-Windows
           path: knobs/release/Knobs-Portable-*.zip
-          compression-level: 0
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: runner.os == 'Linux'
-        with:
-          name: Knobs-Linux
-          path: |
-            knobs/release/*.AppImage
-            knobs/release/SHA256SUMS-*.txt
           compression-level: 0
           if-no-files-found: error
 
@@ -178,7 +154,6 @@ jobs:
           Knobs isn't code-signed, so SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
 
           **Portable:** extract `Knobs-Portable-*.zip` to a folder and run `Knobs.exe` from there.
-          **Linux:** `chmod +x` the AppImage and run it.
 
           Before this release was published, CI installed the Windows build on a clean machine, launched it with `--smoke-test` and uninstalled it. SHA-256 checksums are in `SHA256SUMS-*.txt`. Build provenance: `gh attestation verify <file> -R Mrperson73/shift-game`.
           EOF

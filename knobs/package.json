@@ -15,7 +15,6 @@
     "test": "vitest run",
     "test:e2e": "node build.mjs && playwright test",
     "dist:win": "node build.mjs && electron-builder --win --x64 --publish never",
-    "dist:linux": "node build.mjs && electron-builder --linux --publish never",
     "dist:mac": "node build.mjs && electron-builder --mac --publish never"
   },
   "devDependencies": {
@@ -86,13 +85,6 @@
       "shortcutName": "Knobs",
       "uninstallDisplayName": "Knobs",
       "artifactName": "Knobs-Setup-${version}.${ext}"
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Development",
-      "icon": "build/icon.png"
     },
     "mac": {
       "target": [

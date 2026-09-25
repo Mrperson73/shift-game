@@ -22,7 +22,8 @@ export interface OverlayApi {
   onPet(cb: (p: PetData) => void): void;
   setCapture(on: boolean): void;
   save(p: PetData): void;
-  notify(e: { type: 'hatched' | 'grew' | 'status'; text?: string }): void;
+  /** Tells the main process what's going on (tray tooltip, notifications, how often to poll). */
+  notify(e: { type: 'hatched' | 'grew' | 'status'; text?: string; asleep?: boolean }): void;
   openCard(): void;
   menu(): void;
   error(msg: string): void;
