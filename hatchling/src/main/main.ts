@@ -6,8 +6,8 @@ import type { WorldUpdate } from '../shared/api';
 import { resolveTheme } from '../shared/themes';
 import { type Activity, type Command, type ModProblem, newPet, type OverlayInit, type PanelInit, type Settings, TRICKS } from '../shared/types';
 import { type Desktop, NO_DESKTOP, openDesktop } from './desktop';
-import { detectGame, gamePids } from './games';
 import { computeWorld, type WinRect } from './geometry';
+import { MediaWatcher } from './media';
 import { allSpecies, ensureModsFolder } from './mods';
 import { sanitizeColors, sanitizeName, sanitizePet, sanitizeSettings, Store } from './store';
 
@@ -278,6 +278,9 @@ function pollCursor() {
 }
 
 let processTick = 0;
+/** The game you're playing and the video you're watching (it lists programs at most every ~10 s). */
+const media = new MediaWatcher();
+let video: Activity['video'] = null;
 function pollActivity() {
   // Pick up a species folder created by hand after startup.
   if (!modsWatcher && processTick % 15 === 7 && fs.existsSync(MODS_DIR)) {
@@ -287,19 +290,19 @@ function pollActivity() {
   // The smoke test runs on an idle CI machine; don't let the pet fall asleep there.
   const idle = SMOKE ? 0 : powerMonitor.getSystemIdleTime();
   const state = powerMonitor.getSystemIdleState(1);
-  if (desktop.available && processTick++ % 5 === 0) {
+  if (desktop.available) {
+    processTick++;
     try {
-      const procs = desktop.processes();
-      const exes = new Set(procs.values());
-      const needTitles = exes.has('javaw.exe') || exes.has('java.exe');
-      const wins = needTitles ? desktop.windows(new Set()) : [];
-      game = detectGame(exes, wins.map((w) => ({ exe: procs.get(w.pid) ?? '', title: w.title })));
-      games = gamePids(procs, wins);
+      const s = settings();
+      const seen = media.poll(desktop, { games: s.gameReactions, videos: s.videoReactions, exclude: ownHandles() });
+      game = seen.game;
+      games = seen.gamePids;
+      video = seen.video;
     } catch (e) {
-      log(`processes: ${(e as Error).message}`);
+      log(`media: ${(e as Error).message}`);
     }
   }
-  const a: Activity = { idle, locked: locked || state === 'locked', game, video: null };
+  const a: Activity = { idle, locked: locked || state === 'locked', game, video };
   sendOverlay('activity', a);
 }
 
