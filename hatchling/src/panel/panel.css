@@ -1,0 +1,475 @@
+:root {
+  --bg: #fbf8f2;
+  --card: #ffffff;
+  --ink: #2a2230;
+  --muted: #6f6776;
+  --line: #e8e1d6;
+  --accent: #4f8f45;
+  --accent-ink: #ffffff;
+  --accent-soft: #e4f1df;
+  --egg: #f4ecd8;
+  --bad: #b3261e;
+  --track: #efe8dc;
+  --focus: #2f6fdd;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17151c;
+    --card: #221f29;
+    --ink: #f1ecf6;
+    --muted: #a79fb0;
+    --line: #34303d;
+    --accent: #7bc26e;
+    --accent-ink: #10220d;
+    --accent-soft: #263a23;
+    --egg: #3a3446;
+    --bad: #ff8a80;
+    --track: #302b38;
+    --focus: #8ab4ff;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.4 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 15px;
+}
+nav {
+  display: flex;
+  gap: 4px;
+  background: var(--track);
+  padding: 3px;
+  border-radius: 10px;
+}
+nav button {
+  border: 0;
+  background: transparent;
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+nav button.on {
+  background: var(--card);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+main {
+  padding: 4px 18px 18px;
+}
+h1 {
+  margin: 4px 0 2px;
+  font-size: 22px;
+  line-height: 1.2;
+}
+h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.lead,
+.hint,
+.note,
+.tips {
+  color: var(--muted);
+  margin: 4px 0 12px;
+}
+.tips {
+  font-size: 12px;
+  text-align: center;
+  margin-top: 14px;
+}
+
+button {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+button:hover {
+  border-color: var(--accent);
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+button.primary:hover {
+  filter: brightness(1.06);
+}
+button.big {
+  padding: 10px 20px;
+  font-size: 15px;
+}
+button.ghost {
+  background: transparent;
+}
+button.danger {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.row.end {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* choose */
+.eggs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+.egg {
+  padding: 6px 4px 8px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 2px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.egg span {
+  font-weight: 600;
+}
+.egg.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.about {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.about p {
+  margin: 2px 0 8px;
+}
+.latin {
+  font-style: italic;
+  color: var(--muted);
+}
+.swatches {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.swatches button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+}
+.swatches button.on {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent);
+}
+.vname {
+  color: var(--muted);
+  margin-left: 4px;
+}
+.field {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+}
+.field span {
+  font-weight: 600;
+}
+.field input,
+.name-edit,
+select {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+/* card */
+.portrait {
+  margin: 0 -6px;
+  border-radius: 16px;
+  background: radial-gradient(ellipse at 50% 85%, var(--accent-soft), transparent 70%);
+}
+.title {
+  text-align: center;
+  margin-bottom: 10px;
+}
+.name {
+  border: 0;
+  background: transparent;
+  font-size: 22px;
+  font-weight: 700;
+  padding: 0 4px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.name svg {
+  opacity: 0.4;
+}
+.name:hover svg {
+  opacity: 0.9;
+}
+.name-edit {
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  width: 70%;
+}
+.sub {
+  color: var(--muted);
+}
+.egg-note {
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+}
+.growth {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px 4px;
+  margin-bottom: 10px;
+}
+.stage {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.stage span {
+  color: var(--muted);
+}
+.track {
+  position: relative;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--track);
+  overflow: hidden;
+}
+.track.big {
+  height: 12px;
+}
+.track .fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--accent);
+  transition: width 0.6s;
+}
+.track i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--card);
+}
+.growth .hint {
+  font-size: 12.5px;
+  margin: 8px 0;
+}
+.bars {
+  display: grid;
+  gap: 8px;
+  margin: 6px 2px 12px;
+}
+.bar {
+  display: grid;
+  grid-template-columns: 58px 1fr 70px;
+  gap: 10px;
+  align-items: center;
+}
+.bar span {
+  color: var(--muted);
+}
+.bar em {
+  font-style: normal;
+  font-size: 12.5px;
+  text-align: right;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+.actions button {
+  flex: 1 1 auto;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  margin-top: 14px;
+  text-align: center;
+}
+.stats b {
+  display: block;
+  font-size: 17px;
+}
+.stats span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* settings */
+.settings > * + * {
+  margin-top: 10px;
+}
+.toggle,
+.seg-row,
+.slider,
+.select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.toggle em {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+.toggle input {
+  appearance: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 99px;
+  background: var(--track);
+  border: 1px solid var(--line);
+  position: relative;
+  cursor: pointer;
+  flex: none;
+  transition: background 0.15s;
+}
+.toggle input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: left 0.15s;
+}
+.toggle input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle input:checked::after {
+  left: 18px;
+}
+.seg {
+  display: flex;
+  background: var(--track);
+  padding: 3px;
+  border-radius: 10px;
+  gap: 2px;
+}
+.seg button {
+  border: 0;
+  background: transparent;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+.seg button.on {
+  background: var(--card);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.slider input {
+  flex: 1;
+  max-width: 220px;
+  accent-color: var(--accent);
+}
+.box {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px 12px;
+  margin-top: 14px !important;
+}
+.box p {
+  margin: 2px 0 8px;
+  color: var(--muted);
+}
+.box .ok {
+  color: var(--accent);
+}
+.box .bad {
+  color: var(--bad);
+  font-size: 12.5px;
+}
+footer {
+  margin-top: 16px !important;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+footer a {
+  color: inherit;
+}

@@ -1,0 +1,105 @@
+{
+  "name": "hatchling",
+  "productName": "Hatchling",
+  "version": "1.0.0",
+  "description": "A dinosaur that lives on your desktop and grows up with you",
+  "main": "dist/main.js",
+  "private": true,
+  "license": "MIT",
+  "author": "Mrperson",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "electron .",
+    "dev": "node build.mjs --dev && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "node build.mjs && playwright test",
+    "dist:win": "node build.mjs && electron-builder --win --x64 --publish never",
+    "dist:linux": "node build.mjs && electron-builder --linux --publish never"
+  },
+  "dependencies": {
+    "koffi": "3.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63",
+    "@preact/signals": "^2.11.2",
+    "@types/node": "^22.20.4",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "preact": "^10.29.8",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  },
+  "homepage": "https://github.com/mrperson73/shift-game/tree/main/hatchling",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mrperson73/shift-game.git"
+  },
+  "build": {
+    "appId": "app.hatchling.desktop",
+    "productName": "Hatchling",
+    "copyright": "Copyright © 2026 Mrperson",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/tray.png",
+        "to": "tray.png"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/koffi/**",
+      "node_modules/@koromix/**"
+    ],
+    "npmRebuild": false,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Hatchling-Portable-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "packElevateHelper": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hatchling",
+      "uninstallDisplayName": "Hatchling",
+      "artifactName": "Hatchling-Setup-${version}.${ext}",
+      "include": "build/installer.nsh"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game",
+      "icon": "build/icon.png"
+    },
+    "publish": null
+  }
+}
