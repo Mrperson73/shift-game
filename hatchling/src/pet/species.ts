@@ -404,7 +404,7 @@ export const RAPTOR: SpeciesDef = {
     ...NO_FRONT,
   },
   baby: { ...BABY_COMMON, tailLen: 0.7 },
-  features: { teeth: true, feathers: true, crest: true, sickleClaw: true },
+  features: { teeth: true, feathers: true, featherCoat: true, crest: true, sickleClaw: true },
   personality: { speed: 0.85, jump: 0.85, curiosity: 0.9, stamina: 0.6, playfulness: 0.85, vocal: 0.55 },
   variants: [
     { id: 'sand', name: 'Sand', body: '#c7a06a', belly: '#f1e2c4', pattern: '#8a673c', accent: '#7c4a2a', iris: '#e0a93b', pattern_kind: 'bands' },
@@ -1113,7 +1113,7 @@ export const GALLI: SpeciesDef = {
     ...NO_FRONT,
   },
   baby: { ...BABY_COMMON, headLen: 1.4, headH: 1.85, neckLen: 0.6, eyeR: 2.5 },
-  features: { beak: true, feathers: true },
+  features: { beak: true, feathers: true, featherCoat: true },
   personality: { speed: 1, jump: 0.7, curiosity: 0.7, stamina: 0.5, playfulness: 0.8, vocal: 0.6 },
   variants: [
     { id: 'plains', name: 'Plains', body: '#c9a97a', belly: '#f6ecd8', pattern: '#8f7148', accent: '#5a7ad9', iris: '#e8a33a', pattern_kind: 'bands' },

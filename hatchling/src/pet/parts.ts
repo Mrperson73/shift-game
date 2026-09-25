@@ -55,8 +55,8 @@ export function coatPaths(st: Station[], fluff: number, puff: number): { back: P
   const belly = new Path2D();
   const grow = 1 + 0.4 * puff;
   along(st, -7.5, 9, 2, (q, i) => {
-    const sz = (q.up * 0.3 + 1.3) * fluff * grow * (0.85 + 0.3 * ((i * 7) % 3) / 2);
-    const base = dorsalAt(q, -sz * 0.35);
+    const sz = (q.up * 0.36 + 1.6) * fluff * grow * (0.85 + 0.3 * ((i * 7) % 3) / 2);
+    const base = dorsalAt(q, -sz * 0.28);
     const tip = add2(base, add2(dir(q.a + Math.PI, sz * 1.3), dir(q.a + Math.PI / 2, sz * 0.45)));
     tuft(path, base, tip, sz * 0.75);
   });
