@@ -1,7 +1,7 @@
 // The overlay renderer: runs the pet simulation, draws it, and handles the mouse.
 // The window is click-through except while the cursor is over the pet (or its ball).
 //
-// Power: it redraws only as often as the pet needs — up to 60 fps while something moves, 24 fps
+// Power: it redraws only as often as the pet needs — up to 60 fps while something moves, 20 fps
 // while it idles, 10 fps asleep, and not at all while hidden or while the PC is locked.
 
 import { drawEgg, drawPet, type Palette, paletteFor } from '../pet/draw';
@@ -349,7 +349,7 @@ function fps() {
   const busy = pet.foods.length > 0 || !!pet.ball || !!pet.butterfly || !!dragging || pop < 1 || squash !== 0 || !pet.grounded || Math.abs(pet.vx) > 1;
   if (busy || MOVING.has(pet.act.k)) return 60;
   if (pet.asleep) return 10;
-  if (CALM.has(pet.act.k)) return captured ? 30 : 24;
+  if (CALM.has(pet.act.k)) return captured ? 30 : 20;
   return 30;
 }
 

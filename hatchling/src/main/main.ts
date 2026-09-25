@@ -24,6 +24,9 @@ if (SMOKE) {
 if (process.env.HATCHLING_USER_DATA) app.setPath('userData', process.env.HATCHLING_USER_DATA);
 else if (SMOKE) app.setPath('userData', path.join(smokeDir, 'user'));
 
+// Hatchling never uses the network, so run Chromium's network layer inside the main process
+// instead of a separate helper process (one process and some memory less).
+app.commandLine.appendSwitch('enable-features', 'NetworkServiceInProcess2,NetworkServiceInProcess');
 protocol.registerSchemesAsPrivileged([{ scheme: 'hatchling', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.setAppUserModelId('app.hatchling.desktop');
 
