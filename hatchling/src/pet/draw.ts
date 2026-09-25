@@ -297,6 +297,8 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   const f = features;
   const grown = 1 - r.baby;
   const display = clamp(r.pose.display, 0, 1);
+  // Fine detail (skin texture) only where it can be seen: not on tiny hatchlings.
+  const fine = sc >= 0.6;
   // Winged species: four-legged ones (pterosaurs) fly with their arms; two-legged ones spread them.
   const winged = !!f.wings;
   const flying = winged && r.pose.fly > 0.4;
@@ -563,7 +565,7 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   bellyBand(ctx, st, pal);
   pattern(ctx, st, pal, o);
   if (f.armor || f.osteoderms) scutes(ctx, st, pal, o, !!f.osteoderms);
-  texture(ctx, f.featherCoat ? 'feathers' : 'scales', s.bounds, (f.featherCoat ? 2 : 2.4) + 1.6 * grown, 0.12);
+  if (fine) texture(ctx, f.featherCoat ? 'feathers' : 'scales', s.bounds, (f.featherCoat ? 2 : 2.4) + 1.6 * grown, 0.12);
   formShade(ctx, body, s.bounds, 2 + p.hipR * 0.13, 'rgba(28, 14, 48, 0.15)', 'rgba(255, 255, 255, 0.12)');
   shade(ctx, s.bounds);
   // A soft sheen along the back.
@@ -648,7 +650,7 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     ctx.globalAlpha = 1;
   }
   const hb = { x1: s.bounds.x1, x2: s.bounds.x2, y1: Math.min(s.headO.y, s.top.y) - p.jawD * 1.5, y2: s.top.y + 2 };
-  texture(ctx, 'scales', hb, 1.6 + 0.8 * grown, 0.07);
+  if (fine) texture(ctx, 'scales', hb, 1.6 + 0.8 * grown, 0.07);
   formShade(ctx, headUnion, hb, 0.8 + H * 0.1, 'rgba(28, 14, 48, 0.13)', 'rgba(255, 255, 255, 0.12)');
   shade(ctx, hb);
   ctx.restore();
