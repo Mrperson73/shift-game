@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILT_IN, ModError, parseSpeciesMod, REX } from '../../src/pet/species';
+import { BUILT_IN, ModError, movesOf, parseSpeciesMod, REX } from '../../src/pet/species';
 
 describe('species mods', () => {
   it('builds a species from a base with multipliers, features and colours', () => {
@@ -67,5 +67,29 @@ describe('species mods', () => {
       for (const v of Object.values(s.body)) expect(Number.isFinite(v)).toBe(true);
       if (s.stance === 'quad') expect(s.body.shoulderHeight * s.body.fThigh * s.body.fShin * s.body.fLegW, s.id).toBeGreaterThan(0);
     }
+  });
+
+  it('every built-in has signature moves, and winged ones can fly', () => {
+    for (const s of BUILT_IN) {
+      expect(movesOf(s).length, s.id).toBeGreaterThan(0);
+      if (s.features.wings) expect(movesOf(s), s.id).toContain('fly');
+    }
+    expect(BUILT_IN.filter((s) => s.features.wings).map((s) => s.id).sort()).toEqual(['micro', 'ptera', 'quetzal']);
+  });
+
+  it('mods can have wings, moves, a size and the new voices', () => {
+    const s = parseSpeciesMod({ id: 'dimo', name: 'Dimo', base: 'ptera', features: { wings: 'feather', pteroCrest: false }, moves: ['fly', 'screech', 'fly'], scale: 0.7, voice: { kind: 'croak' } }, 'dimo.json');
+    expect(s.features.wings).toBe('feather');
+    expect(s.features.pteroCrest).toBe(false);
+    expect(s.stance).toBe('quad');
+    expect(s.moves).toEqual(['fly', 'screech']);
+    expect(s.scale).toBe(0.7);
+    expect(s.voice.kind).toBe('croak');
+    // Without its own moves, a mod gets moves from its features.
+    expect(movesOf(parseSpeciesMod({ id: 'spiky', name: 'Spiky', base: 'rex', features: { dome: true } }, 's.json'))).toContain('headbutt');
+    const bad = (m: unknown) => () => parseSpeciesMod(m, 'x.json');
+    expect(bad({ id: 'x', name: 'X', moves: ['moonwalk'] })).toThrow(/moves/);
+    expect(bad({ id: 'x', name: 'X', features: { wings: 'jet' } })).toThrow(/wings/);
+    expect(bad({ id: 'x', name: 'X', scale: 'big' })).toThrow(/scale/);
   });
 });

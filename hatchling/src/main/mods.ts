@@ -43,30 +43,41 @@ right away; new species show up as eggs when you hatch a new pet.
 Fields (all optional except id and name):
   id           short id, a-z 0-9 and - (not one of the built-in ids)
   name         shown on the egg
-  base         rex | raptor | pachy | trike | stego | anky | spino | carno | dilo | parasaur | galli |
-               brachio (trike, stego, anky and brachio walk on four legs)
+  base         two legs: rex | raptor | pachy | spino | carno | dilo | parasaur | galli | allo |
+                         therizino | compy | ovi | micro
+               four legs: trike | stego | anky | brachio | diplo | styraco | iguano | kentro |
+                          amarga | corytho | deino
+               winged (they fly): ptera | quetzal | micro
   latin        its scientific name
   blurb        one line about it
   fact         a fun fact for the egg chooser
   lengthM      real length in metres
   diet         carnivore | herbivore
   food         meat | fish | leaf | berry
+  scale        size next to other species, 0.5 .. 1.4 (1 = normal; Compsognathus is 0.6)
   proportions  size multipliers, e.g. { "headLen": 1.2, "tailLen": 0.8, "armUpper": 0.5 }
-  features     true/false: teeth, brow, feathers, crest, dome, horns, sail, spikes, sickleClaw,
-               beak, frill, browHorns, noseHorn, plates, thagomizer, armor, club, tubeCrest,
-               twinCrests, crocSnout, duckBill, finTail, nasalArch
+  features     true/false: teeth, brow, feathers, featherCoat, crest, dome, horns, sail, spikes,
+               sickleClaw, beak, frill, frillSpikes, browHorns, noseHorn, longNoseHorn, plates,
+               spikeRow, shoulderSpikes, thagomizer, armor, club, osteoderms, tubeCrest,
+               helmetCrest, twinCrests, neckFrill, crocSnout, duckBill, longBeak, pteroCrest,
+               parrotBeak, casque, horseHead, lowSnout, finTail, nasalArch, lacrimal,
+               scytheClaws, thumbSpike, dorsalSpines, neckSpines, whipTail
+               and wings: "membrane" | "feather" | false (winged species can fly)
+  moves        its special moves, e.g. ["stomp", "display"]: stomp, headbutt, tailSwipe, charge,
+               fish, honk, display, browse, dig, screech, fly, rake, whip, curl, roll, gape
   personality  0..1: speed, jump, curiosity, stamina, playfulness, vocal
   variants     colours: [{ "name": "Red", "body": "#a83a2c", "belly": "#f0d0b0",
                             "pattern": "#5a1d16", "accent": "#e8b04a", "iris": "#f3d35a",
                             "pattern_kind": "stripes" }]
                pattern_kind: stripes | bands | spots | rosettes | speckles | saddle | none
   voice        { "pitch": 120, "growl": 0.8, "kind": "roar" }
-               kind: roar | screech | honk | bellow | hoot | trill
+               kind: roar | screech | honk | bellow | hoot | trill | chitter | croak | rumble |
+                     grunt | coo
   lines        what it says in "chatty" mode, per event:
                hello, welcome, feed, pet, game, gameOver, sleepy, night, grow, thrown, poke
 
 See ceratosaurus.json.example for a complete example (rename it to .json to use it).
-Tip: ask an AI to "write a Hatchling species JSON for an Allosaurus" and paste this file in.
+Tip: ask an AI to "write a Hatchling species JSON for a Giganotosaurus" and paste this file in.
 `;
 
 const EXAMPLE = {
@@ -92,8 +103,13 @@ const EXAMPLE = {
 
 export function ensureModsFolder(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
+  // The README is ours: keep it up to date with this version's bases and features.
   const readme = path.join(dir, 'README.txt');
-  if (!fs.existsSync(readme)) fs.writeFileSync(readme, README);
+  let old = '';
+  try {
+    old = fs.readFileSync(readme, 'utf8');
+  } catch {}
+  if (old !== README) fs.writeFileSync(readme, README);
   const ex = path.join(dir, 'ceratosaurus.json.example');
   if (!fs.existsSync(ex)) fs.writeFileSync(ex, JSON.stringify(EXAMPLE, null, 2));
 }

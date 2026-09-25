@@ -1873,6 +1873,7 @@ const FEATURE_KEYS: (keyof Features)[] = [
   'wings', 'lacrimal', 'scytheClaws', 'featherCoat', 'longBeak', 'pteroCrest', 'frillSpikes', 'longNoseHorn', 'horseHead', 'thumbSpike', 'lowSnout', 'dorsalSpines', 'neckSpines', 'shoulderSpikes', 'spikeRow', 'helmetCrest', 'parrotBeak', 'casque', 'neckFrill', 'whipTail', 'osteoderms',
 ];
 const FOODS: Food[] = ['meat', 'fish', 'leaf', 'berry'];
+const MOVES: SignatureMove[] = ['stomp', 'headbutt', 'tailSwipe', 'charge', 'fish', 'honk', 'display', 'browse', 'dig', 'screech', 'fly', 'rake', 'whip', 'curl', 'roll', 'gape'];
 const PERSONALITY_KEYS: (keyof Personality)[] = ['speed', 'jump', 'curiosity', 'stamina', 'playfulness', 'vocal'];
 const LINE_EVENTS: LineEvent[] = ['hello', 'welcome', 'feed', 'pet', 'game', 'gameOver', 'sleepy', 'night', 'grow', 'thrown', 'poke'];
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -1984,7 +1985,7 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
   if (m.voice !== undefined) {
     const o = m.voice as Record<string, unknown>;
     if (!o || typeof o !== 'object') throw new ModError('"voice" must be an object');
-    const kinds: VoiceKind[] = ['roar', 'screech', 'honk', 'bellow', 'hoot', 'trill'];
+    const kinds: VoiceKind[] = ['roar', 'screech', 'honk', 'bellow', 'hoot', 'trill', 'chitter', 'croak', 'rumble', 'grunt', 'coo'];
     if (o.kind !== undefined && !kinds.includes(o.kind as VoiceKind)) throw new ModError(`"voice.kind" must be one of ${kinds.join(', ')}`);
     voice = {
       pitch: typeof o.pitch === 'number' ? clamp(o.pitch, 50, 900) : base.voice.pitch,
@@ -1997,6 +1998,15 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
   if (diet !== 'carnivore' && diet !== 'herbivore') throw new ModError('"diet" must be carnivore or herbivore');
   const food = m.food === undefined ? (m.diet === undefined ? base.food : diet === 'carnivore' ? 'meat' : 'leaf') : m.food;
   if (!FOODS.includes(food as Food)) throw new ModError(`"food" must be one of ${FOODS.join(', ')}`);
+
+  let moves = base.moves;
+  if (m.moves !== undefined) {
+    if (!Array.isArray(m.moves) || m.moves.some((x) => !MOVES.includes(x as SignatureMove))) throw new ModError(`"moves" must be a list of: ${MOVES.join(', ')}`);
+    moves = m.moves.length ? [...new Set(m.moves as SignatureMove[])].slice(0, 4) : undefined;
+  }
+  const scale = m.scale === undefined ? base.scale : typeof m.scale === 'number' && Number.isFinite(m.scale) ? clamp(m.scale, 0.5, 1.4) : (() => {
+    throw new ModError('"scale" must be a number from 0.5 to 1.4');
+  })();
 
   return {
     id,
@@ -2017,6 +2027,8 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
     shiny: base.shiny,
     voice,
     lines,
+    moves,
+    scale,
     mod: file,
   };
 }
