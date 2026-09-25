@@ -101,8 +101,7 @@
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png"
     },
-    "publish": null,
-    "compression": "maximum"
+    "publish": null
   },
   "repository": {
     "type": "git",
