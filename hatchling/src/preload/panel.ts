@@ -10,6 +10,7 @@ const api: PanelApi = {
   openModsFolder: () => ipcRenderer.send('panel:mods'),
   openExternal: (url) => ipcRenderer.send('panel:external', url),
   close: () => ipcRenderer.send('panel:close'),
+  titleBar: (o) => ipcRenderer.send('panel:titleBar', o),
   onUpdate: (cb) => {
     ipcRenderer.on('update', (_e, v) => cb(v));
   },

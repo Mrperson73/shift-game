@@ -1,6 +1,11 @@
 // Species definitions: body proportions for the procedural rig, looks, personality and sounds.
 // Built-in species live here; players can add more as JSON files (see parseSpeciesMod).
 
+import type { Voice, VoiceKind } from '../audio/types';
+import { PATTERN_KINDS, type PatternKind } from '../shared/types';
+
+export type { Voice } from '../audio/types';
+
 /** Adult body proportions in rig units (an adult is roughly 90 units tall). */
 export interface BodyParams {
   hipHeight: number;
@@ -78,14 +83,7 @@ export interface Variant {
   pattern: string;
   accent: string;
   iris: string;
-  pattern_kind: 'stripes' | 'spots' | 'bands' | 'none';
-}
-
-export interface Voice {
-  /** Base pitch in Hz for an adult; hatchlings are about an octave higher. */
-  pitch: number;
-  /** 0..1 how growly (noise) versus tonal the calls are. */
-  growl: number;
+  pattern_kind: PatternKind;
 }
 
 export type LineEvent = 'hello' | 'welcome' | 'feed' | 'pet' | 'game' | 'gameOver' | 'sleepy' | 'night' | 'grow' | 'thrown' | 'poke';
@@ -96,12 +94,22 @@ export interface SpeciesDef {
   latin: string;
   blurb: string;
   diet: 'carnivore' | 'herbivore';
+  /** Walks on two legs or on four. */
+  stance: 'biped' | 'quad';
+  /** Family, shown in the egg chooser (e.g. "Tyrannosaur"). */
+  group: string;
+  /** Length of a real adult, metres. */
+  lengthM: number;
+  /** A fun fact for the egg chooser. */
+  fact: string;
   body: BodyParams;
   /** Multipliers applied at hatch (growth 0) and eased out to 1 at adulthood. */
   baby: Partial<Record<BodyKey, number>>;
   features: Features;
   personality: Personality;
   variants: Variant[];
+  /** The rare colours of a shiny hatchling. */
+  shiny: Variant;
   voice: Voice;
   lines: Partial<Record<LineEvent, string[]>>;
   /** Set for species loaded from the mods folder. */
@@ -140,6 +148,10 @@ export const REX: SpeciesDef = {
   latin: 'Tyrannosaurus',
   blurb: 'Bold and loud. Loves meat and big stomps.',
   diet: 'carnivore',
+  stance: 'biped',
+  group: 'Tyrannosaur',
+  lengthM: 12,
+  fact: 'Its bite was the strongest of any land animal ever.',
   body: {
     hipHeight: 42,
     thigh: 22,
@@ -183,8 +195,11 @@ export const REX: SpeciesDef = {
     { id: 'ember', name: 'Ember', body: '#c4643e', belly: '#f1d1a0', pattern: '#83382a', accent: '#f0b24a', iris: '#f3d35a', pattern_kind: 'stripes' },
     { id: 'ash', name: 'Ash', body: '#80848c', belly: '#dcd8d0', pattern: '#4d5159', accent: '#c9553f', iris: '#e8a53a', pattern_kind: 'stripes' },
     { id: 'midnight', name: 'Midnight', body: '#46557f', belly: '#bcc6e2', pattern: '#2a3356', accent: '#7fd1c9', iris: '#9fe07a', pattern_kind: 'stripes' },
+    { id: 'sandstone', name: 'Sandstone', body: '#c9a36b', belly: '#f3e4c2', pattern: '#7b5431', accent: '#b9452e', iris: '#f0c24a', pattern_kind: 'saddle' },
+    { id: 'albino', name: 'Albino', body: '#efe9e0', belly: '#ffffff', pattern: '#d8cdbf', accent: '#e58b9b', iris: '#e0445c', pattern_kind: 'none' },
   ],
-  voice: { pitch: 110, growl: 0.75 },
+  shiny: { id: 'shiny', name: 'Shiny Gold', body: '#e2b23a', belly: '#fff2c4', pattern: '#a8701a', accent: '#fff6d8', iris: '#5fd0ff', pattern_kind: 'stripes' },
+  voice: { pitch: 110, growl: 0.75, kind: 'roar' },
   lines: {
     hello: ['RAWR!', 'Hi!'],
     welcome: ['You\'re back!', 'RAWR! Missed you.'],
@@ -206,6 +221,10 @@ export const RAPTOR: SpeciesDef = {
   latin: 'Utahraptor',
   blurb: 'Fast, curious and jumpy. Chases your cursor.',
   diet: 'carnivore',
+  stance: 'biped',
+  group: 'Raptor',
+  lengthM: 6,
+  fact: 'It had a 24 cm sickle claw on each foot.',
   body: {
     hipHeight: 38,
     thigh: 19,
@@ -249,8 +268,11 @@ export const RAPTOR: SpeciesDef = {
     { id: 'jungle', name: 'Jungle', body: '#6c9460', belly: '#e0e7c9', pattern: '#3d5c35', accent: '#d9a53a', iris: '#e7c24a', pattern_kind: 'bands' },
     { id: 'plum', name: 'Plum', body: '#7d5e93', belly: '#e6d7ec', pattern: '#4d3762', accent: '#eab94f', iris: '#f0d160', pattern_kind: 'bands' },
     { id: 'snow', name: 'Snow', body: '#d6dbe2', belly: '#ffffff', pattern: '#8791a1', accent: '#557aa7', iris: '#6fb2e8', pattern_kind: 'bands' },
+    { id: 'fire', name: 'Fire', body: '#d9582b', belly: '#fbd9a8', pattern: '#7d2a17', accent: '#2f2b3a', iris: '#ffd84a', pattern_kind: 'bands' },
+    { id: 'night', name: 'Night', body: '#343b4f', belly: '#8f99b0', pattern: '#171a26', accent: '#39c1d0', iris: '#b8f36a', pattern_kind: 'speckles' },
   ],
-  voice: { pitch: 330, growl: 0.35 },
+  shiny: { id: 'shiny', name: 'Shiny Frost', body: '#9fdcf5', belly: '#f2fbff', pattern: '#4f8fc0', accent: '#ffffff', iris: '#ff7ad1', pattern_kind: 'bands' },
+  voice: { pitch: 330, growl: 0.35, kind: 'screech' },
   lines: {
     hello: ['Hi hi hi!', 'Chirp!'],
     welcome: ['You\'re back!!', 'Chirp chirp!'],
@@ -272,6 +294,10 @@ export const PACHY: SpeciesDef = {
   latin: 'Pachycephalosaurus',
   blurb: 'Calm and stubborn, with a very hard head. Loves leaves.',
   diet: 'herbivore',
+  stance: 'biped',
+  group: 'Pachycephalosaur',
+  lengthM: 4.5,
+  fact: 'The dome on its head was up to 25 cm of solid bone.',
   body: {
     hipHeight: 37,
     thigh: 20,
@@ -315,8 +341,11 @@ export const PACHY: SpeciesDef = {
     { id: 'clay', name: 'Clay', body: '#b37a51', belly: '#f1d8ba', pattern: '#7e5034', accent: '#ecd6ad', iris: '#5b3a1f', pattern_kind: 'spots' },
     { id: 'sky', name: 'Sky', body: '#6f9dc2', belly: '#e1eef7', pattern: '#4a7495', accent: '#f1e7d3', iris: '#3d4f6b', pattern_kind: 'spots' },
     { id: 'rose', name: 'Rose', body: '#c17b8c', belly: '#f6e1e6', pattern: '#8d4f60', accent: '#f4e3c8', iris: '#5b2f3b', pattern_kind: 'spots' },
+    { id: 'honey', name: 'Honey', body: '#d8a24a', belly: '#fbe8bf', pattern: '#9a6420', accent: '#6e4a2b', iris: '#4a2f14', pattern_kind: 'saddle' },
+    { id: 'stone', name: 'Stone', body: '#8f8b83', belly: '#dcd8cd', pattern: '#5e5a52', accent: '#c7b28a', iris: '#3b3226', pattern_kind: 'speckles' },
   ],
-  voice: { pitch: 180, growl: 0.45 },
+  shiny: { id: 'shiny', name: 'Shiny Opal', body: '#d9c8f5', belly: '#fbf6ff', pattern: '#9c7fd0', accent: '#ffe6a8', iris: '#2f9c8f', pattern_kind: 'spots' },
+  voice: { pitch: 180, growl: 0.45, kind: 'hoot' },
   lines: {
     hello: ['Hmph. Hi.', 'Hoo!'],
     welcome: ['Oh. You\'re back.', 'Hoo!'],
@@ -413,7 +442,7 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
         return (o[k] as string).toLowerCase();
       };
       const kind = o.pattern_kind ?? base.variants[0].pattern_kind;
-      if (!['stripes', 'spots', 'bands', 'none'].includes(kind as string)) throw new ModError(`Variant ${i + 1}: "pattern_kind" must be stripes, spots, bands or none`);
+      if (!PATTERN_KINDS.includes(kind as PatternKind)) throw new ModError(`Variant ${i + 1}: "pattern_kind" must be one of ${PATTERN_KINDS.join(', ')}`);
       const d = base.variants[i % base.variants.length];
       return {
         id: `v${i}`,
@@ -443,9 +472,12 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
   if (m.voice !== undefined) {
     const o = m.voice as Record<string, unknown>;
     if (!o || typeof o !== 'object') throw new ModError('"voice" must be an object');
+    const kinds: VoiceKind[] = ['roar', 'screech', 'honk', 'bellow', 'hoot', 'trill'];
+    if (o.kind !== undefined && !kinds.includes(o.kind as VoiceKind)) throw new ModError(`"voice.kind" must be one of ${kinds.join(', ')}`);
     voice = {
       pitch: typeof o.pitch === 'number' ? clamp(o.pitch, 50, 900) : base.voice.pitch,
       growl: typeof o.growl === 'number' ? clamp(o.growl, 0, 1) : base.voice.growl,
+      kind: (o.kind as VoiceKind | undefined) ?? base.voice.kind,
     };
   }
 
@@ -458,11 +490,16 @@ export function parseSpeciesMod(raw: unknown, file: string): SpeciesDef {
     latin: m.latin === undefined ? base.latin : text(m.latin, 40, 'latin'),
     blurb: m.blurb === undefined ? `A custom ${base.name}.` : text(m.blurb, 90, 'blurb'),
     diet,
+    stance: base.stance,
+    group: base.group,
+    lengthM: typeof m.lengthM === 'number' && Number.isFinite(m.lengthM) ? clamp(m.lengthM, 0.2, 60) : base.lengthM,
+    fact: m.fact === undefined ? `Made by you, based on ${base.name}.` : text(m.fact, 120, 'fact'),
     body,
     baby: base.baby,
     features,
     personality,
     variants,
+    shiny: base.shiny,
     voice,
     lines,
     mod: file,

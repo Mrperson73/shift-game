@@ -2,8 +2,9 @@
 // one clean outline around the whole silhouette, lighter belly, species pattern, big eyes.
 
 import { at, clamp, dir, lerp, type V } from './math';
+import type { CustomColors } from '../shared/types';
 import type { Rig } from './rig';
-import type { Features, Variant } from './species';
+import type { Features, SpeciesDef, Variant } from './species';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -49,6 +50,18 @@ export function palette(v: Variant): Palette {
     iris: v.iris,
     mouth: '#5b2230',
   };
+}
+
+/** A species colour variant; -1 is the shiny colours. */
+export function variantOf(sp: SpeciesDef, variant: number): Variant {
+  if (variant < 0) return sp.shiny;
+  return sp.variants[variant % sp.variants.length] ?? sp.variants[0];
+}
+
+/** The palette a pet is drawn with: hand-picked colours, or its species variant. */
+export function paletteFor(sp: SpeciesDef, variant: number, colors?: CustomColors | null): Palette {
+  if (colors) return palette({ id: 'custom', name: 'Custom', ...colors });
+  return palette(variantOf(sp, variant));
 }
 
 // ---------------- path helpers ----------------

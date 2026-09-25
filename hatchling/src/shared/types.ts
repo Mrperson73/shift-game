@@ -1,5 +1,20 @@
 // Data shared by the main process, the overlay (the pet) and the panel window.
 
+import type { ThemeId } from './themes';
+
+export type PatternKind = 'stripes' | 'spots' | 'bands' | 'rosettes' | 'speckles' | 'saddle' | 'none';
+export const PATTERN_KINDS: PatternKind[] = ['stripes', 'bands', 'spots', 'rosettes', 'speckles', 'saddle', 'none'];
+
+/** Colours the player picked by hand (overrides the species colour variant). */
+export interface CustomColors {
+  body: string;
+  belly: string;
+  pattern: string;
+  accent: string;
+  iris: string;
+  pattern_kind: PatternKind;
+}
+
 export interface PetStats {
   pets: number;
   meals: number;
@@ -29,6 +44,10 @@ export interface PetData {
   lastSeen: number;
   /** Last horizontal position as a fraction of the screen width. */
   x: number | null;
+  /** Hand-picked colours, or null to use the species variant. */
+  colors: CustomColors | null;
+  /** A rare shiny hatchling (about 1 in 20): special colours and sparkles. */
+  shiny: boolean;
 }
 
 export type SizeSetting = 'S' | 'M' | 'L';
@@ -51,6 +70,8 @@ export interface Settings {
   activity: ActivitySetting;
   /** React when The Isle, Brawlhalla or Minecraft starts and stops. */
   gameReactions: boolean;
+  /** Colour theme of the panel window. */
+  theme: ThemeId;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -59,16 +80,17 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 0.5,
   speech: 'emotes',
   explore: true,
-  hideFullscreen: true,
+  hideFullscreen: false,
   display: null,
   startWithWindows: true,
   activity: 'normal',
   gameReactions: true,
+  theme: 'auto',
 };
 
 export const SIZE_SCALE: Record<SizeSetting, number> = { S: 0.8, M: 1.1, L: 1.5 };
 
-export function newPet(species: string, variant: number, name: string, now: number): PetData {
+export function newPet(species: string, variant: number, name: string, now: number, shiny = false): PetData {
   return {
     v: 1,
     id: Math.random().toString(36).slice(2, 10),
@@ -84,7 +106,21 @@ export function newPet(species: string, variant: number, name: string, now: numb
     stats: { pets: 0, meals: 0, naps: 0, games: 0, throws: 0, pokes: 0 },
     lastSeen: now,
     x: null,
+    colors: null,
+    shiny,
   };
+}
+
+/** A pet you had before (kept when you hatch a new egg). */
+export interface PastPet {
+  name: string;
+  species: string;
+  variant: number;
+  hatchedAt: number | null;
+  activeSeconds: number;
+  retiredAt: number;
+  shiny?: boolean;
+  colors?: CustomColors | null;
 }
 
 /** A platform the pet can stand on, in overlay coordinates (CSS pixels, y down). */
@@ -142,8 +178,15 @@ export type Command =
   | { type: 'wake' }
   | { type: 'rename'; name: string }
   | { type: 'hatch-now' }
+  /** Change the pet's colours: a species variant (-1 = the shiny colours), or hand-picked colours. */
+  | { type: 'recolor'; variant: number; colors: CustomColors | null }
+  /** Ask the pet to do a trick right now. */
+  | { type: 'trick'; name: TrickName }
   /** Save right away (the app is about to quit). */
   | { type: 'flush' };
+
+export type TrickName = 'dance' | 'roar' | 'spin' | 'sit' | 'shake';
+export const TRICKS: TrickName[] = ['dance', 'roar', 'spin', 'sit', 'shake'];
 
 export interface OverlayInit {
   pet: PetData;
@@ -167,4 +210,8 @@ export interface PanelInit {
   platform: string;
   modsDir: string;
   view: 'choose' | 'card' | 'settings';
+  /** Past pets, oldest first. */
+  history: PastPet[];
+  /** Whether Windows is in dark mode (for the 'auto' theme). */
+  systemDark: boolean;
 }

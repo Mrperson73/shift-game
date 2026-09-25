@@ -10,7 +10,9 @@ import { type Activity, type PetData, type Platform, type Settings, SIZE_SCALE, 
 import { type Abilities, GROUND, ground, landingOn, ride, rideWall, route, usable, wallFoot, type World } from './world';
 
 export type EmoteKind = 'heart' | 'hearts' | 'zzz' | 'exclaim' | 'question' | 'note' | 'anger' | 'sweat' | 'stars' | 'food' | 'sparkle';
-export type SoundName = 'chirp' | 'roar' | 'growl' | 'crunch' | 'yawn' | 'happy' | 'squeak' | 'thud' | 'crack' | 'hatch' | 'snore' | 'boing';
+import type { SoundName } from '../audio/types';
+
+export type { SoundName } from '../audio/types';
 
 export type SimEvent =
   | { type: 'emote'; kind: EmoteKind }

@@ -1,17 +1,38 @@
 // Tiny synthesized sound effects (no audio files): chirps, roars, crunches and so on.
 // Pitch drops as the pet grows, so hatchlings squeak and adults rumble.
+// (Placeholder engine: being replaced by the richer synth in src/audio.)
 
-import type { SoundName } from '../sim/pet';
+import type { SoundName, Voice } from '../audio/types';
+
+export interface PlayOpts {
+  /** Quieter (idle noises, far away). */
+  soft?: boolean;
+  /** Stereo position, -1 (left) .. 1 (right). */
+  pan?: number;
+}
 
 export class Sounds {
   private ctx: AudioContext | null = null;
   private noise: AudioBuffer | null = null;
+  private idleTimer = 0;
   enabled = true;
   volume = 0.5;
   /** Base pitch in Hz and growl amount of the current species; baby is 0..1. */
   pitch = 150;
   growlAmt = 0.5;
   baby = 1;
+
+  /** Voice of the current species and how grown up the pet is (0..1). */
+  setVoice(v: Voice, growth: number) {
+    this.pitch = v.pitch;
+    this.growlAmt = v.growl;
+    this.baby = Math.pow(1 - Math.min(1, Math.max(0, growth)), 1.6);
+  }
+
+  /** Close the audio device until the next sound (saves power while nothing plays). */
+  sleep() {
+    if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend();
+  }
 
   private get ac() {
     if (!this.ctx) {
@@ -24,18 +45,21 @@ export class Sounds {
     return this.ctx;
   }
 
-  play(name: SoundName, soft = false) {
+  play(name: SoundName, opts: PlayOpts = {}) {
     if (!this.enabled || this.volume <= 0) return;
     try {
       const ac = this.ac;
       if (ac.state === 'suspended') void ac.resume();
       const out = ac.createGain();
-      out.gain.value = this.volume * 0.32 * (soft ? 0.45 : 1);
+      out.gain.value = this.volume * 0.32 * (opts.soft ? 0.45 : 1);
       out.connect(ac.destination);
       const t = ac.currentTime + 0.01;
       const f = this.pitch * (1 + 1.3 * this.baby);
-      const fn = (this as unknown as Record<SoundName, (ac: AudioContext, out: AudioNode, t: number, f: number) => void>)[name];
+      const alias: Partial<Record<SoundName, string>> = { call: 'chirp', purr: 'happy', gulp: 'crunch', sneeze: 'crack', step: 'thud', grow: 'happy', whoosh: 'boing', pop: 'boing', sniff: 'crunch' };
+      const fn = (this as unknown as Record<string, (ac: AudioContext, out: AudioNode, t: number, f: number) => void>)[alias[name] ?? name];
       fn.call(this, ac, out, t, f);
+      clearTimeout(this.idleTimer);
+      this.idleTimer = window.setTimeout(() => this.sleep(), 4000);
     } catch {
       /* audio is optional */
     }

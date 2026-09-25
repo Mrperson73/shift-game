@@ -1,7 +1,7 @@
 // The APIs the preload scripts expose to the two renderers.
 
 import type { SpeciesDef } from '../pet/species';
-import type { Activity, Command, ModProblem, OverlayInit, PanelInit, PetData, Platform, Settings, Wall } from './types';
+import type { Activity, Command, ModProblem, OverlayInit, PanelInit, PastPet, PetData, Platform, Settings, Wall } from './types';
 
 export interface WorldUpdate {
   width: number;
@@ -29,6 +29,15 @@ export interface OverlayApi {
   smoke(report: Record<string, unknown>): void;
 }
 
+export interface PanelUpdate {
+  pet: PetData | null;
+  settings: Settings;
+  species: SpeciesDef[];
+  problems: ModProblem[];
+  history: PastPet[];
+  systemDark: boolean;
+}
+
 export interface PanelApi {
   init(): Promise<PanelInit>;
   hatch(o: { species: string; variant: number; name: string; startWithWindows: boolean }): Promise<void>;
@@ -38,7 +47,9 @@ export interface PanelApi {
   openModsFolder(): void;
   openExternal(url: string): void;
   close(): void;
-  onUpdate(cb: (u: { pet: PetData | null; settings: Settings; species: SpeciesDef[]; problems: ModProblem[] }) => void): void;
+  /** Colour the window's title bar (and its minimise/close buttons) to match the theme. */
+  titleBar(o: { color: string; symbolColor: string }): void;
+  onUpdate(cb: (u: PanelUpdate) => void): void;
   onView(cb: (view: PanelInit['view']) => void): void;
 }
 

@@ -3,19 +3,18 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_SETTINGS, type PetData, type Settings } from '../shared/types';
+import { THEME_IDS } from '../shared/themes';
+import { type CustomColors, DEFAULT_SETTINGS, type PastPet, PATTERN_KINDS, type PetData, type Settings } from '../shared/types';
 
-export interface PastPet {
-  name: string;
-  species: string;
-  variant: number;
-  hatchedAt: number | null;
-  activeSeconds: number;
-  retiredAt: number;
-}
+export type { PastPet } from '../shared/types';
+
+/** Bumped when saved data needs a one-time migration. */
+export const REV = 2;
 
 export interface StoreData {
   v: 1;
+  /** Data revision (see REV). */
+  rev: number;
   pet: PetData | null;
   settings: Settings;
   history: PastPet[];
@@ -30,6 +29,21 @@ export function sanitizeName(v: unknown): string {
   return s || 'Rexy';
 }
 
+const HEX = /^#[0-9a-f]{6}$/i;
+
+export function sanitizeColors(raw: unknown): CustomColors | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const c = raw as Record<string, unknown>;
+  const col = (k: string) => (typeof c[k] === 'string' && HEX.test(c[k] as string) ? (c[k] as string).toLowerCase() : null);
+  const body = col('body');
+  const belly = col('belly');
+  const pattern = col('pattern');
+  const accent = col('accent');
+  const iris = col('iris');
+  if (!body || !belly || !pattern || !accent || !iris) return null;
+  return { body, belly, pattern, accent, iris, pattern_kind: oneOf(c.pattern_kind, PATTERN_KINDS, 'none') };
+}
+
 export function sanitizePet(raw: unknown): PetData | null {
   if (!raw || typeof raw !== 'object') return null;
   const p = raw as Record<string, unknown>;
@@ -40,7 +54,7 @@ export function sanitizePet(raw: unknown): PetData | null {
     id: str(p.id, 32, Math.random().toString(36).slice(2, 10)),
     name: sanitizeName(p.name),
     species: str(p.species, 32, 'rex').toLowerCase(),
-    variant: Math.floor(num(p.variant, 0, 99, 0)),
+    variant: Math.floor(num(p.variant, -1, 99, 0)),
     bornAt: num(p.bornAt, 0, 8.64e15, now),
     hatchedAt: p.hatchedAt === null ? null : num(p.hatchedAt, 0, 8.64e15, now),
     activeSeconds: num(p.activeSeconds, 0, 1e9, 0),
@@ -57,6 +71,23 @@ export function sanitizePet(raw: unknown): PetData | null {
     },
     lastSeen: num(p.lastSeen, 0, 8.64e15, now),
     x: p.x === null || p.x === undefined ? null : num(p.x, 0, 1, 0.8),
+    colors: sanitizeColors(p.colors),
+    shiny: p.shiny === true,
+  };
+}
+
+function sanitizePast(raw: unknown): PastPet | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const h = raw as Record<string, unknown>;
+  return {
+    name: sanitizeName(h.name),
+    species: str(h.species, 32, 'rex').toLowerCase(),
+    variant: Math.floor(num(h.variant, -1, 99, 0)),
+    hatchedAt: typeof h.hatchedAt === 'number' ? num(h.hatchedAt, 0, 8.64e15, 0) : null,
+    activeSeconds: num(h.activeSeconds, 0, 1e9, 0),
+    retiredAt: num(h.retiredAt, 0, 8.64e15, 0),
+    shiny: h.shiny === true,
+    colors: sanitizeColors(h.colors),
   };
 }
 
@@ -74,14 +105,19 @@ export function sanitizeSettings(raw: unknown, base: Settings = DEFAULT_SETTINGS
     startWithWindows: bool('startWithWindows'),
     activity: oneOf(s.activity, ['calm', 'normal', 'lively'] as const, base.activity),
     gameReactions: bool('gameReactions'),
+    theme: oneOf(s.theme, THEME_IDS, base.theme),
   };
 }
 
 function parse(text: string): StoreData {
   const raw = JSON.parse(text) as Record<string, unknown>;
   if (!raw || typeof raw !== 'object') throw new Error('not an object');
-  const history = Array.isArray(raw.history) ? (raw.history as PastPet[]).filter((h) => h && typeof h === 'object').slice(-50) : [];
-  return { v: 1, pet: sanitizePet(raw.pet), settings: sanitizeSettings(raw.settings), history };
+  const history = Array.isArray(raw.history) ? raw.history.map(sanitizePast).filter((h): h is PastPet => !!h).slice(-50) : [];
+  const rev = typeof raw.rev === 'number' ? raw.rev : 1;
+  const settings = sanitizeSettings(raw.settings);
+  // 1.1: the pet stays visible over full-screen apps unless you turn hiding back on.
+  if (rev < 2) settings.hideFullscreen = false;
+  return { v: 1, rev: REV, pet: sanitizePet(raw.pet), settings, history };
 }
 
 export class Store {
@@ -105,18 +141,24 @@ export class Store {
         if (f === this.file && fs.existsSync(f)) this.recovered = `Could not read ${path.basename(f)}: ${(e as Error).message}`;
       }
     }
-    return { v: 1, pet: null, settings: { ...DEFAULT_SETTINGS }, history: [] };
+    return { v: 1, rev: REV, pet: null, settings: { ...DEFAULT_SETTINGS }, history: [] };
   }
 
+  private lastText = '';
+
+  /** Writes the file if anything changed since the last save. */
   save() {
+    const text = JSON.stringify(this.data, null, 1);
+    if (text === this.lastText) return;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(this.data, null, 1));
+    fs.writeFileSync(tmp, text);
     try {
       if (fs.existsSync(this.file)) fs.copyFileSync(this.file, this.file + '.bak');
     } catch {
       /* the backup is best effort */
     }
     fs.renameSync(tmp, this.file);
+    this.lastText = text;
   }
 }

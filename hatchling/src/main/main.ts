@@ -3,12 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BUILT_IN, type SpeciesDef } from '../pet/species';
 import type { WorldUpdate } from '../shared/api';
-import { type Activity, type Command, type ModProblem, newPet, type OverlayInit, type PanelInit, type Settings } from '../shared/types';
+import { resolveTheme } from '../shared/themes';
+import { type Activity, type Command, type ModProblem, newPet, type OverlayInit, type PanelInit, type Settings, TRICKS } from '../shared/types';
 import { type Desktop, openDesktop } from './desktop';
 import { detectGame, gamePids } from './games';
 import { computeWorld, type WinRect } from './geometry';
 import { allSpecies, ensureModsFolder } from './mods';
-import { sanitizeName, sanitizePet, sanitizeSettings, Store } from './store';
+import { sanitizeColors, sanitizeName, sanitizePet, sanitizeSettings, Store } from './store';
 
 /** `--smoke-test`: start with a fresh pet, exercise it for a few seconds, check the Windows integration, exit 0/1. */
 const SMOKE = process.argv.includes('--smoke-test');
@@ -342,6 +343,8 @@ function panelInit(view: PanelInit['view']): PanelInit {
     platform: process.platform,
     modsDir: MODS_DIR,
     view,
+    history: store.data.history,
+    systemDark: nativeTheme.shouldUseDarkColors,
   };
 }
 
@@ -356,16 +359,19 @@ function openPanel(view: PanelInit['view']) {
     panel.focus();
     return;
   }
-  const dark = nativeTheme.shouldUseDarkColors;
+  const theme = resolveTheme(settings().theme, nativeTheme.shouldUseDarkColors);
   panel = new BrowserWindow({
-    width: 440,
-    height: 640,
+    width: 460,
+    height: 700,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
     show: false,
     title: 'Hatchling',
-    backgroundColor: dark ? '#17151c' : '#fbf8f2',
+    backgroundColor: theme.bg,
+    // The page draws its own title bar; Windows keeps the real minimise and close buttons.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: theme.bar, symbolColor: theme.barInk, height: 40 },
     autoHideMenuBar: true,
     icon: path.join(DIST, '..', 'build', 'icon.png'),
     webPreferences: { preload: path.join(DIST, 'preload-panel.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false },
@@ -377,7 +383,7 @@ function openPanel(view: PanelInit['view']) {
 }
 
 function pushPanel() {
-  if (panel && !panel.isDestroyed()) panel.webContents.send('update', { pet: store.data.pet, settings: settings(), species, problems });
+  if (panel && !panel.isDestroyed()) panel.webContents.send('update', { pet: store.data.pet, settings: settings(), species, problems, history: store.data.history, systemDark: nativeTheme.shouldUseDarkColors });
 }
 
 // ---------------- settings ----------------
@@ -490,8 +496,10 @@ function registerIpc() {
     const sp = species.find((s) => s.id === o.species) ?? BUILT_IN[0];
     const variant = Math.max(0, Math.min(sp.variants.length - 1, Math.floor(Number(o.variant) || 0)));
     const old = store.data.pet;
-    if (old) store.data.history.push({ name: old.name, species: old.species, variant: old.variant, hatchedAt: old.hatchedAt, activeSeconds: old.activeSeconds, retiredAt: Date.now() });
-    store.data.pet = newPet(sp.id, variant, sanitizeName(o.name), Date.now());
+    if (old) store.data.history.push({ name: old.name, species: old.species, variant: old.variant, hatchedAt: old.hatchedAt, activeSeconds: old.activeSeconds, retiredAt: Date.now(), shiny: old.shiny, colors: old.colors });
+    // About 1 egg in 20 hatches shiny: it starts in its species' shiny colours (and keeps them unlocked).
+    const shiny = Math.random() < 0.05;
+    store.data.pet = newPet(sp.id, shiny ? -1 : variant, sanitizeName(o.name), Date.now(), shiny);
     store.data.settings = sanitizeSettings({ ...settings(), startWithWindows: !!o.startWithWindows });
     save();
     applyLoginItem();
@@ -511,7 +519,36 @@ function registerIpc() {
       pushPanel();
       return;
     }
+    if (c.type === 'recolor') {
+      const p = store.data.pet;
+      if (!p) return;
+      const sp = species.find((s) => s.id === p.species) ?? BUILT_IN[0];
+      const v = Math.floor(Number(c.variant));
+      // -1 (shiny colours) only for shiny pets.
+      p.variant = Number.isFinite(v) && v >= (p.shiny ? -1 : 0) && v < sp.variants.length ? v : p.variant;
+      p.colors = sanitizeColors(c.colors);
+      save();
+      sendOverlay('command', { type: 'recolor', variant: p.variant, colors: p.colors });
+      pushPanel();
+      return;
+    }
+    if (c.type === 'trick') {
+      if (TRICKS.includes(c.name)) sendOverlay('command', { type: 'trick', name: c.name });
+      return;
+    }
     if (['feed', 'play', 'call', 'sleep', 'wake', 'hatch-now'].includes(c.type)) sendOverlay('command', { type: c.type });
+  });
+  ipcMain.on('panel:titleBar', (e, o: { color: unknown; symbolColor: unknown }) => {
+    if (!fromPanel(e) || !panel || !o) return;
+    const hex = (v: unknown) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
+    const color = hex(o.color);
+    const symbolColor = hex(o.symbolColor);
+    if (!color || !symbolColor) return;
+    try {
+      panel.setTitleBarOverlay({ color, symbolColor, height: 40 });
+    } catch {
+      /* not supported on this platform */
+    }
   });
   ipcMain.handle('panel:newEgg', (e) => {
     if (fromPanel(e)) openPanel('choose');

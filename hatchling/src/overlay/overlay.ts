@@ -1,7 +1,7 @@
 // The overlay renderer: runs the pet simulation, draws it, and handles the mouse.
 // The window is click-through except while the cursor is over the pet (or its ball).
 
-import { drawEgg, drawPet, palette, type Palette } from '../pet/draw';
+import { drawEgg, drawPet, type Palette, paletteFor } from '../pet/draw';
 import { stageName, stageOf } from '../pet/growth';
 import { BUILT_IN, type SpeciesDef } from '../pet/species';
 import type { PetData, Settings } from '../shared/types';
@@ -43,9 +43,8 @@ const env: Env = { rand: Math.random, hour: () => new Date().getHours(), now: ()
 
 const speciesOf = (id: string) => species.find((s) => s.id === id) ?? BUILT_IN[0];
 
-function paletteFor() {
-  const sp = speciesOf(pet.data.species);
-  pal = palette(sp.variants[pet.data.variant % sp.variants.length]);
+function paletteForPet() {
+  pal = paletteFor(speciesOf(pet.data.species), pet.data.variant, pet.data.colors);
 }
 
 function applySettings(s: Settings) {
@@ -57,16 +56,13 @@ function applySettings(s: Settings) {
 }
 
 function voice() {
-  const sp = speciesOf(pet.data.species);
-  sounds.pitch = sp.voice.pitch;
-  sounds.growlAmt = sp.voice.growl;
-  sounds.baby = pet.rig.baby;
+  sounds.setVoice(speciesOf(pet.data.species).voice, pet.growth);
 }
 
 function makePet(data: PetData, width: number, height: number) {
   const w = pet?.world ?? { width, height, platforms: [ground(width, height)], walls: [] };
   pet = new Pet(data, speciesOf(data.species), settings, w, env);
-  paletteFor();
+  paletteForPet();
   voice();
   fx.clear();
   dirty = true;
@@ -184,7 +180,7 @@ function handle(events: SimEvent[]) {
         break;
       }
       case 'sound':
-        sounds.play(e.name, e.soft);
+        sounds.play(e.name, { soft: e.soft, pan: ((pet.x / Math.max(1, pet.world.width)) * 2 - 1) * 0.6 });
         break;
       case 'dust':
         fx.dust(e.x, e.y, e.big, Math.max(0.6, pet.px));
@@ -377,7 +373,7 @@ async function main() {
   api.onSpecies((list) => {
     species = list;
     pet.setSpecies(speciesOf(pet.data.species));
-    paletteFor();
+    paletteForPet();
     voice();
     dirty = true;
   });
