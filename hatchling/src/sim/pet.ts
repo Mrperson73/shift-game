@@ -110,8 +110,8 @@ export interface Env {
 }
 
 const G = 2100;
-/** Things it drops as soon as there's food to go for. */
-const INTERRUPTIBLE = new Set(['idle', 'sit', 'lie', 'walk', 'travel', 'watch', 'gaze', 'stretch', 'follow', 'dance', 'zoomies', 'tail', 'paw', 'sneeze', 'shake', 'hunt', 'chase', 'hop']);
+/** Things it drops as soon as there's food to go for (short tricks and games finish first). */
+const INTERRUPTIBLE = new Set(['idle', 'sit', 'lie', 'walk', 'travel', 'watch', 'gaze', 'stretch', 'follow', 'zoomies', 'hunt', 'chase']);
 const TAU = Math.PI * 2;
 const ACTIVITY_MUL = { calm: 0.55, normal: 1, lively: 1.6 } as const;
 
