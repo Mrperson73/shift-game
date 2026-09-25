@@ -218,7 +218,7 @@ function watchdog() {
 
 // ---------------- polling the desktop ----------------
 
-let worldRate = 8;
+let worldRate = 5;
 let worldTimer: NodeJS.Timeout | null = null;
 let movingUntil = 0;
 
@@ -251,7 +251,7 @@ function scheduleWorld() {
   // Faster while windows are moving, so a pet riding a dragged window keeps up; slow while it
   // sleeps, and not at all while hidden or locked.
   const idle = overlayHidden || locked || !settings().explore;
-  const hz = Date.now() < movingUntil ? 30 : idle ? 0.5 : petAsleep ? 1 : worldRate;
+  const hz = Date.now() < movingUntil ? 30 : idle ? 0.5 : petAsleep ? 2 : worldRate;
   worldTimer = setTimeout(() => {
     pollWorld();
     scheduleWorld();
@@ -357,6 +357,7 @@ function petMenu(): MenuItemConstructorOptions[] {
           { label: 'Come here', click: cmd({ type: 'call' }) },
           { label: 'Nap', click: cmd({ type: 'sleep' }) },
           { label: 'Wake up', click: cmd({ type: 'wake' }) },
+          { label: 'Tricks', submenu: TRICKS.map((name) => ({ label: name[0].toUpperCase() + name.slice(1), click: cmd({ type: 'trick', name }) })) },
         ] as MenuItemConstructorOptions[])
       : ([{ label: 'Hatch now', click: cmd({ type: 'hatch-now' }) }] as MenuItemConstructorOptions[])),
     { type: 'separator' },

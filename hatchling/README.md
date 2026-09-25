@@ -2,9 +2,9 @@
 
 **A dinosaur that lives on your desktop and grows up with you.**
 
-Pick an egg, click it on your taskbar, and a baby dinosaur hatches. It walks along your taskbar, climbs the sides of your windows and wanders along their tops. It naps when you step away and gets excited when you launch a game. It grows from a big-headed hatchling to an adult over a few weeks of real use.
+Pick one of 11 eggs, click it on your taskbar, and a baby dinosaur hatches. It walks along your taskbar, climbs the sides of your windows and wanders along their tops. It dances, pounces on your cursor, chases butterflies, naps when you step away and roars when you launch a game. It grows from a big-headed hatchling to an adult over a few weeks of real use, and your progress is saved automatically.
 
-It runs fully offline. No account, no internet, no tracking.
+It runs fully offline and is built to stay open all day: it barely uses your CPU. No account, no internet, no tracking.
 
 ## Install (Windows)
 
@@ -16,23 +16,33 @@ To uninstall, go to **Settings → Apps → Installed apps → Hatchling**. This
 
 ## Your pet
 
-| Species | | |
+| Species | Personality | Looks and habits |
 | --- | --- | --- |
-| **Rex** (*Tyrannosaurus*) | Bold and loud | Loves meat, roars when it's grown up |
-| **Raptor** (*Utahraptor*) | Fast, curious, jumpy | Chases your cursor, climbs the most |
-| **Pachy** (*Pachycephalosaurus*) | Calm and stubborn | Loves leaves; has a very hard head |
+| **Rex** (*Tyrannosaurus*) | Bold and loud | Loves meat, big stomps and bigger roars |
+| **Raptor** (*Utahraptor*) | Fast, curious, jumpy | Feathered; chases your cursor and climbs the most |
+| **Pachy** (*Pachycephalosaurus*) | Calm and stubborn | A domed, very hard head; loves leaves |
+| **Trike** (*Triceratops*) | Gentle and stubborn | Four legs, three horns and a big frill; paws the ground and charges |
+| **Stego** (*Stegosaurus*) | Slow and sweet | Four legs, plates down its back, a spiky "thagomizer" tail |
+| **Anky** (*Ankylosaurus*) | A calm little tank | Four legs, armoured back, clubbed tail |
+| **Spino** (*Spinosaurus*) | Big and splashy | A huge sail, a crocodile snout and a finned tail; eats fish |
+| **Carno** (*Carnotaurus*) | A horned speedster | Tiny arms, long legs, always ready to race |
+| **Dilo** (*Dilophosaurus*) | A chatty show-off | Two thin head crests; sneaky and quick |
+| **Parasaur** (*Parasaurolophus*) | Friendly and LOUD | A long tube crest; honks like a trumpet |
+| **Galli** (*Gallimimus*) | Zero chill | Feathered, long-legged, the fastest runner; eats berries |
 
-Each species has four colours. You pick one when you choose the egg.
+**Colours.** Every species has six colour schemes, from natural camouflage to albino and neon, with stripes, bands, spots, rosettes, speckles or a saddle. About 1 egg in 20 hatches **shiny**: rare colours and sparkles. You can recolour your pet any time from its card, including picking every colour by hand.
 
-**Growing up.** Your pet grows only while you're actually at your PC: time you're idle or locked doesn't count. It goes hatchling → juvenile → sub-adult → adult, like in The Isle. That takes about 60 hours together, a few weeks at normal use. It gets bigger, and its proportions change from baby (big head, big eyes, stubby legs) to adult.
+**Growing up.** Your pet grows only while you're actually at your PC: time you're idle or locked doesn't count. It goes hatchling → juvenile → sub-adult → adult, like in The Isle. That takes about 60 hours together, a few weeks at normal use. It gets bigger, and its proportions change from baby (big head, big eyes, stubby legs) to adult. Frills, horns, plates, sails and crests grow in as it grows.
 
-**What it does on its own.** It walks, runs and sits along the taskbar and on windows, looks at your cursor, sniffs around, chases its tail and has the zoomies. It climbs up the sides of windows, walks along the tops, and rides along if you drag a window it's standing on. It naps when it's tired, and it gets sleepy at night.
+**Saved progress.** Everything is saved automatically every few seconds (when something changed), when you lock your PC, when it goes to sleep and when Windows shuts down. It starts with Windows, so your pet is always there.
+
+**What it does on its own.** It walks, runs and sits along the taskbar and on windows, looks at your cursor, tilts its head, sniffs around, sneezes, shakes itself off, chases its tail and has the zoomies. Happy pets dance. Curious ones crouch, wiggle and pounce when your cursor sits still near them. Stubborn ones paw the ground and charge. Now and then a butterfly flutters by and it tries to catch it. It climbs up the sides of windows, walks along the tops, and rides along if you drag a window it's standing on. It naps when it's tired, and it gets sleepy at night.
 
 **Reacting to you.**
 
 - It falls asleep when you're away for 5 minutes or lock your PC, and stretches and greets you when you're back.
 - When **The Isle**, **Brawlhalla** or **Minecraft** starts, it roars and wishes you luck. When the game closes, it welcomes you back.
-- It hides by itself while a full-screen game, video or presentation is in front, so it never gets in your way. It comes back when you leave full screen.
+- It stays visible all the time, even over full-screen apps. If you'd rather it hid while a full-screen game or video is in front, turn on **Settings → Hide during full-screen apps**.
 
 ## Things you can do
 
@@ -44,42 +54,54 @@ Each species has four colours. You pick one when you choose the egg.
 | **Double-click** it | Opens its card: growth, mood, energy, hunger and stats |
 | **Right-click** it, or the tray icon | Feed, play ball, come here, nap, wake up, hide for an hour, settings |
 
-**Feed** drops food near it. It finds the food, climbing to it if needed. **Play ball** gives it a ball to chase and kick; you can throw the ball too. The pet never gets sick and never dies. Food and play just make it happier.
+**Feed** drops its favourite food near it (meat, fish, leaves or berries). It finds the food, climbing to it if needed. **Play ball** gives it a ball to chase and kick; you can throw the ball too. From its card you can also ask for **tricks**: dance, roar, spin, sit and shake. The pet never gets sick and never dies. Food and play just make it happier.
 
 ## Settings
 
 - Size (small, medium, large) and energy level (calm, normal, lively)
-- Sounds and volume. The sounds are small synthesized chirps and roars, deeper as it grows.
+- Sounds and volume. Every species has its own voice (roars, screeches, honks, bellows, hoots or trills), synthesized live and deeper as it grows.
 - Speech: off, emotes only (hearts, zzz, !), or chatty (short lines)
 - Climb and walk on windows. When this is off, it stays on the taskbar.
-- Hide during full-screen apps, react to games, start with Windows
+- Hide during full-screen apps (off by default), react to games, start with Windows
 - Which screen it lives on, if you have more than one
+- The window's colour theme: Auto, Meadow, Jungle, Sunset, Volcano, Ocean, Midnight or Candy
 
 ## Custom species
 
-Add your own dinosaurs as small JSON files in `Documents\Hatchling\species`. To create the folder, use **Settings → Open species folder**. It includes a guide and a complete example (a Carnotaurus).
+Add your own dinosaurs as small JSON files in `Documents\Hatchling\species`. To create the folder, use **Settings → Open species folder**. It includes a guide and a complete example (a Ceratosaurus).
 
-A species starts from Rex, Raptor or Pachy and can change:
+A species starts from any built-in species (two- or four-legged) and can change:
 
 - proportions (head, tail, legs, arms, neck and more)
-- features (horns, a sail, back spikes, crest feathers, a dome, teeth)
-- personality, colours, voice, and what it says
+- features (horns, frills, plates, armour, clubs, sails, fins, crests, domes, beaks, teeth and more)
+- personality, colours and patterns, favourite food, voice, and what it says
 
 Hatchling reloads the folder when files change, and new species appear as eggs. Species files are data only and can't run code. A broken file shows a clear error in Settings instead of crashing anything.
 
-Tip: give an AI the `README.txt` from that folder and ask for "a Hatchling species JSON for a Spinosaurus".
+Tip: give an AI the `README.txt` from that folder and ask for "a Hatchling species JSON for an Allosaurus".
 
 ## Privacy and safety
 
 - **No network.** Hatchling never connects to the internet. Every web request is blocked inside the app, and there's no telemetry or auto-updater.
 - **What it reads on Windows** (to find window edges, notice full-screen apps and recognise games):
-  - the position and size of visible windows;
+  - the position, size and see-through-ness of visible windows;
   - which window is in front;
   - the names of running programs, the same list Task Manager shows.
 
   It doesn't inject into other programs, read their memory, hook your keyboard or mouse, or record your screen. None of this is saved or sent anywhere.
 - **Idle detection** uses only "seconds since your last input" from Windows, never which keys you pressed.
 - **Your data** lives in `%APPDATA%\Hatchling\hatchling.json`: your pet, your settings and past pets. Saves are atomic and keep a backup copy, so a crash or power cut can't corrupt your pet.
+
+## Light on your PC
+
+Hatchling is made to stay open all day:
+
+- It redraws only as often as the pet needs: up to 60 frames a second while something moves (never more, even on 144 Hz screens), 20 while it idles, 10 while it sleeps, and none at all while it's hidden or your PC is locked.
+- It checks the mouse 30 times a second only while you move it, and window positions 5 times a second (faster only while you drag a window, slower while it sleeps).
+- The sound device is released a few seconds after the last sound.
+- It runs Chromium's network layer inside the app instead of in an extra helper process, since it never uses the network.
+
+`HATCHLING_PERF=1 npx playwright test perf` prints CPU, frame rate and memory for each state.
 
 ## Checking a download
 
@@ -93,8 +115,8 @@ Checksums (`SHA256SUMS-*.txt`) and a signed [build provenance attestation](https
 
 ## Limitations
 
-- Made for Windows 10 and 11. The Linux build works but uses only the bottom of the screen, since window climbing and game detection are Windows-only.
-- It hides during full-screen apps, so you won't see it over games. Over windowed (not full-screen) games it stays visible.
+- Made for Windows 10 and 11 (Windows builds only).
+- Over full-screen games it stays visible unless you turn on hiding in Settings.
 - It lives on one screen at a time; choose which one in Settings.
 - Clicks land on the pet only when the cursor is exactly over it. Everywhere else, clicks go straight through to your windows.
 
@@ -109,14 +131,14 @@ npm start            # build and run
 npm test             # unit tests (vitest)
 npm run test:e2e     # end-to-end tests against the real app (Playwright)
 npm run dist:win     # Windows installer + portable zip → release/
-npm run dist:linux   # Linux AppImage → release/
 ```
 
 `node scripts/sheet.mjs rex` renders every pose at every growth stage to `shots/`, for checking the art.
 
 ## How it's built
 
-- `src/pet`: species data, growth, a procedural 2D rig (spine, tail springs, two-bone leg IK with planted feet, blinking, poses), and the cartoon renderer. There are no image files: every frame is drawn.
+- `src/pet`: species data, growth, a procedural 2D rig for two- and four-legged dinosaurs (spine, tail springs, two-bone leg IK with planted feet, blinking, poses), and the cartoon renderer. There are no image files: every frame is drawn.
+- `src/audio`: the synthesized voices and sound effects (Web Audio, no sound files).
 - `src/sim`: the pet's life, as pure logic with unit tests. It covers physics, routes across platforms (walk, drop, jump, climb), behaviours, needs and growth.
 - `src/overlay`: a transparent, click-through window over your work area that runs the simulation, draws the pet and handles the mouse.
 - `src/main`: Electron main process. It handles the tray, the panel window, saving, species mods, and a small read-only Win32 layer (`desktop.ts`, via [koffi](https://koffi.dev)) for window positions, full-screen detection and the process list.
