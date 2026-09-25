@@ -30,6 +30,8 @@ export interface Desktop {
   foreground(exclude: Set<string>): Foreground | null;
   /** True when Windows itself says a full-screen/presentation app is running. */
   busy(): boolean;
+  /** Whether a visible always-on-top window sits above `hwnd` (so it covers the pet). */
+  coveredAbove(hwnd: string): boolean;
   /** pid -> lower-case exe name. */
   processes(): Map<number, string>;
 }
@@ -40,6 +42,7 @@ const NONE: Desktop = {
   windows: () => [],
   foreground: () => null,
   busy: () => false,
+  coveredAbove: () => false,
   processes: () => new Map(),
 };
 
@@ -82,6 +85,7 @@ const GW_HWNDNEXT = 2;
 const GWL_STYLE = -16;
 const GWL_EXSTYLE = -20;
 const WS_CHILD = 0x40000000;
+const WS_EX_TOPMOST = 0x8;
 const WS_EX_TOOLWINDOW = 0x80;
 const WS_EX_APPWINDOW = 0x40000;
 const WS_EX_NOACTIVATE = 0x08000000;
@@ -255,6 +259,23 @@ export function openDesktop(): Desktop {
         if (!mon || !GetWindowRect(h, r)) return { hwnd: id, fullscreen: false, monitor: mon ?? { left: 0, top: 0, right: 0, bottom: 0 } };
         const full = !shell && r.left! <= mon.left && r.top! <= mon.top && r.right! >= mon.right && r.bottom! >= mon.bottom;
         return { hwnd: id, fullscreen: full, monitor: mon };
+      },
+      coveredAbove(hwnd) {
+        // Our overlay is always on top, so only other always-on-top windows can be above it.
+        let h = GetTopWindow(0);
+        for (let guard = 0; h && guard < 500; guard++, h = GetWindow(h, GW_HWNDNEXT)) {
+          if (String(h) === hwnd) return false;
+          if (!IsWindowVisible(h) || IsIconic(h)) continue;
+          const ex = Number(GetWindowLongPtrW(h, GWL_EXSTYLE));
+          if (!(ex & WS_EX_TOPMOST) || ex & WS_EX_TRANSPARENT || (ex & WS_EX_TOOLWINDOW && !(ex & WS_EX_APPWINDOW))) continue;
+          if (ex & WS_EX_LAYERED && invisible(h)) continue;
+          dwmBuf.fill(0);
+          if (DwmGetWindowAttribute(h, DWMWA_CLOAKED, dwmBuf, 4) === 0 && dwmBuf.readUInt32LE(0)) continue;
+          if (SKIP_CLASSES.has(className(h))) continue;
+          const r = rectOf(h);
+          if (r && r.right - r.left > 60 && r.bottom - r.top > 40) return true;
+        }
+        return false;
       },
       busy() {
         const s = [0];

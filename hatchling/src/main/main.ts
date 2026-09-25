@@ -38,7 +38,7 @@ const MODS_DIR = process.env.HATCHLING_MODS_DIR || (SMOKE ? path.join(smokeDir, 
 const LOGIN_NAME = 'Hatchling';
 
 const store = new Store(path.join(USER, 'hatchling.json'));
-let desktop: Desktop = { available: false, error: null, windows: () => [], foreground: () => null, busy: () => false, processes: () => new Map() };
+let desktop: Desktop = { available: false, error: null, windows: () => [], foreground: () => null, busy: () => false, coveredAbove: () => false, processes: () => new Map() };
 let species: SpeciesDef[] = BUILT_IN;
 let problems: ModProblem[] = [];
 let overlay: BrowserWindow | null = null;
@@ -170,7 +170,10 @@ function createOverlay() {
 function placeOverlay() {
   if (!overlay) return;
   display = pickDisplay();
-  overlay.setBounds(display.workArea);
+  // Only move the window when the screen area really changed (moving it can make it blink).
+  const b = overlay.getBounds();
+  const wa = display.workArea;
+  if (b.x !== wa.x || b.y !== wa.y || b.width !== wa.width || b.height !== wa.height) overlay.setBounds(wa);
   lastWorld = '';
   pollWorld();
 }
@@ -188,10 +191,9 @@ function setOverlayHidden(h: boolean) {
   }
 }
 
-let lastFg = '';
-let topmostAt = 0;
-
-/** Keeps the pet on screen: re-shows the overlay if something hid it and keeps it above other windows. */
+/** Keeps the pet on screen: re-shows the overlay if something hid it, and puts it back on top if
+ * another always-on-top window got above it. It never touches the window otherwise, so it can't
+ * make the pet blink. */
 function watchdog() {
   if (!overlay || overlay.isDestroyed() || overlayHidden || quitting) return;
   if (!overlay.isVisible() || overlay.isMinimized()) {
@@ -200,19 +202,13 @@ function watchdog() {
     overlay.setAlwaysOnTop(true, 'screen-saver');
     return;
   }
-  // Apps that go full screen or "always on top" can push it down; put it back on top when the
-  // front window changes, and every half minute anyway.
-  let fg = '';
+  if (!desktop.available) return;
   try {
-    fg = desktop.foreground(ownHandles())?.hwnd ?? '';
-  } catch {
-    /* keep going */
-  }
-  const now = Date.now();
-  if (fg !== lastFg || now - topmostAt > 30_000) {
-    lastFg = fg;
-    topmostAt = now;
-    overlay.setAlwaysOnTop(true, 'screen-saver');
+    const h = overlay.getNativeWindowHandle();
+    const id = String(h.length >= 8 ? Number(h.readBigUInt64LE(0)) : h.readUInt32LE(0));
+    if (desktop.coveredAbove(id)) overlay.setAlwaysOnTop(true, 'screen-saver');
+  } catch (e) {
+    log(`watchdog: ${(e as Error).message}`);
   }
 }
 
@@ -703,6 +699,7 @@ function finishSmoke(report: Record<string, unknown>) {
       desktop.windows(new Set());
       desktop.foreground(new Set());
       desktop.busy();
+      desktop.coveredAbove('0');
       checks.push(['reads windows', true]);
     } catch (e) {
       checks.push([`reads windows (${(e as Error).message})`, false]);

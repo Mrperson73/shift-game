@@ -171,9 +171,13 @@ describe('pet', () => {
       expect(pet.data.stats.meals, species.id).toBe(1);
       // Head back to the taskbar: food on the ground.
       pet.foods.push({ id: 8, x: 1500, y: H, vy: 0, landed: true, platform: pet.world.platforms[0], left: 1, kind: 'meat' });
-      run(70);
+      // It eats standing on the taskbar (afterwards it may well go climbing again).
+      let ateAt: { rot: number; y: number } | null = null;
+      run(70, () => {
+        if (!ateAt && pet.data.stats.meals === 2) ateAt = { rot: pet.rot, y: pet.y };
+      });
       expect(pet.data.stats.meals, species.id).toBe(2);
-      expect(pet.rot).toBe(0);
+      expect(ateAt, species.id).toEqual({ rot: 0, y: H });
     }
   });
 
@@ -360,4 +364,29 @@ describe('pet', () => {
       expect(pet.foods[0].kind, id).toBe(food);
     }
   });
+
+  it('does lots of different things, and more play when lively, not just walking', () => {
+    const share = (activity: 'calm' | 'normal' | 'lively') => {
+      const { pet, run } = make({ species: REX, settings: { activity }, seed: 11 });
+      pet.setCursor({ x: 900, y: 300 }, 1 / 30);
+      const time: Record<string, number> = {};
+      run(30 * 60, () => {
+        const k = pet.act.k;
+        time[k] = (time[k] ?? 0) + 1 / 30;
+        // Keep it awake and fed so we measure its choices, not its needs.
+        pet.data.energy = 1;
+        pet.data.hunger = 0;
+      });
+      const total = Object.values(time).reduce((a, b) => a + b, 0);
+      const moving = ((time.walk ?? 0) + (time.travel ?? 0)) / total;
+      const play = ['zoomies', 'tail', 'dance', 'hop', 'pounce', 'hunt', 'chase'].reduce((a, k) => a + (time[k] ?? 0), 0) / total;
+      return { moving, play, kinds: Object.keys(time).length };
+    };
+    const lively = share('lively');
+    const calm = share('calm');
+    expect(lively.moving).toBeLessThan(0.45);
+    expect(lively.kinds).toBeGreaterThanOrEqual(12);
+    expect(lively.play).toBeGreaterThan(calm.play * 2);
+    expect(lively.play).toBeGreaterThan(0.12);
+  }, 60_000);
 });

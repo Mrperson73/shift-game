@@ -96,7 +96,11 @@ export type Act =
   | { k: 'pounce'; phase: 'ready' | 'air'; t: number; wait: number; tx: number }
   | { k: 'paw'; t: number; charge: boolean; next: number }
   | { k: 'sneeze'; t: number; done: boolean }
-  | { k: 'hunt'; t: number; snap: number };
+  | { k: 'hunt'; t: number; snap: number }
+  | { k: 'hop'; t: number; n: number; next: number }
+  | { k: 'stretch'; t: number }
+  | { k: 'gaze'; t: number; dur: number }
+  | { k: 'follow'; t: number };
 
 export interface Env {
   rand: () => number;
@@ -162,6 +166,9 @@ export class Pet {
   private stepSoundAt = -1e9;
   private pendingTrick: TrickName | null = null;
   private curiousFlip = 0;
+  /** What it chose last, so it doesn't do the same thing over and over. */
+  private lastCat = '';
+  private lastBeh = '';
   egg = { crack: 0, wobble: 0, open: 0, wobbleT: 0 };
 
   constructor(data: PetData, species: SpeciesDef, settings: Settings, world: World, env: Env) {
@@ -240,6 +247,11 @@ export class Pet {
   }
   get asleep() {
     return this.act.k === 'sleep';
+  }
+  /** How long it rests between things: shorter for a lively pet, longer for a calm one. */
+  get pace() {
+    const a = this.settings.activity;
+    return a === 'lively' ? 0.55 : a === 'calm' ? 1.5 : 1;
   }
   get platforms() {
     const all = this.settings.explore ? this.world.platforms : this.world.platforms.filter((p) => p.id === GROUND);
@@ -678,12 +690,13 @@ export class Pet {
     if (a.k === 'eat' || a.k === 'sleep' || a.k === 'climb' || a.k === 'move' || a.k === 'paw' || a.k === 'sneeze' || a.k === 'shake') return null;
     if (a.k === 'idle' && a.look) return a.look;
     if (this.butterfly && (a.k === 'hunt' || a.k === 'watch' || a.k === 'idle' || a.k === 'sit')) return toLocal(this.butterfly);
+    if (a.k === 'gaze') return { x: 60, y: this.rig.height * 3 };
     if (this.ball && (a.k === 'chase' || a.k === 'travel')) return toLocal(this.ball);
     if (this.cursor) {
       const d = Math.hypot(this.cursor.x - this.x, this.cursor.y - this.y);
       const near = d < 420 + 260 * this.species.personality.curiosity;
       const inFront = (this.cursor.x - this.x) * this.facing > -20;
-      if ((near && inFront) || a.k === 'watch' || a.k === 'petted' || a.k === 'held' || a.k === 'pounce' || a.k === 'dance' || (a.k === 'react' && a.kind !== 'roar')) return toLocal(this.cursor);
+      if ((near && inFront) || a.k === 'watch' || a.k === 'follow' || a.k === 'petted' || a.k === 'held' || a.k === 'pounce' || a.k === 'dance' || (a.k === 'react' && a.kind !== 'roar')) return toLocal(this.cursor);
     }
     return null;
   }
@@ -899,7 +912,7 @@ export class Pet {
 
   // ---------------- decisions ----------------
 
-  private idleAct(dur: number): Act {
+  private idleAct(dur: number): Extract<Act, { k: 'idle' }> {
     return { k: 'idle', t: 0, dur, nextLook: 1, look: null, sniff: 0 };
   }
 
@@ -985,7 +998,6 @@ export class Pet {
     const r = this.env.rand;
     const d = this.data;
     const pers = this.species.personality;
-    const mul = ACTIVITY_MUL[this.settings.activity];
     const food = this.foods.find((f) => f.landed);
     if (food) {
       this.goTo(food.x, food.y, 'food', true);
@@ -1006,7 +1018,7 @@ export class Pet {
     }
     const baby = this.rig.baby;
     const c = this.cursor;
-    const cursorNear = c && Math.hypot(c.x - this.x, c.y - this.y) < 500;
+    const cursorNear = !!c && Math.hypot(c.x - this.x, c.y - this.y) < 500;
     const others = this.platforms.filter((p) => p.id !== this.platform.id);
     const tired = 1 - d.energy;
     const b = this.butterfly;
@@ -1014,40 +1026,93 @@ export class Pet {
       this.act = { k: 'hunt', t: 0, snap: 0 };
       return;
     }
-    // Pounce at a cursor that sits still near its feet.
     const pl = this.platform;
-    const pounceOk =
-      !!c && this.cursorSpeed < 40 && Math.abs(c.x - this.x) > this.heightPx * 0.8 && Math.abs(c.x - this.x) < this.heightPx * 3.2 + 60 && c.y > pl.y - this.heightPx * 1.8 && c.y < pl.y + 30 && c.x > pl.x1 && c.x < pl.x2;
+    // The cursor is at about the pet's level on this platform (to follow it or pounce on it).
+    const cursorLevel = !!c && c.y > pl.y - this.heightPx * 2 && c.y < pl.y + 40 && c.x > pl.x1 && c.x < pl.x2;
+    const pounceOk = cursorLevel && this.cursorSpeed < 40 && Math.abs(c!.x - this.x) > this.heightPx * 0.8 && Math.abs(c!.x - this.x) < this.heightPx * 3.2 + 60 && c!.y > pl.y - this.heightPx * 1.8;
     const f = this.species.features;
     const charger = !!(f.frill || f.dome || f.armor || f.club || f.horns || f.browHorns);
     const loud = this.species.voice.kind === 'roar' || this.species.voice.kind === 'bellow' || this.species.voice.kind === 'honk';
-    const options: [number, () => void][] = [
-      [3, () => (this.act = this.idleAct(3 + r() * 6))],
-      [3.2 * mul * (0.5 + d.energy), () => this.wander(false)],
-      [0.6 * mul * pers.speed * d.energy, () => this.wander(true)],
-      [1.2 + tired * 2 - mul * 0.3, () => (this.act = { k: 'sit', t: 0, dur: 8 + r() * 20 })],
-      [0.5 + tired * 2.5, () => (this.act = { k: 'lie', t: 0, dur: 10 + r() * 25 })],
-      [cursorNear ? 2 * pers.curiosity : 0, () => (this.act = { k: 'watch', t: 0, dur: 4 + r() * 6 })],
-      [others.length && this.settings.explore ? 1.3 * pers.jump * mul * d.energy : 0, () => this.explore(others)],
-      [0.35 * pers.playfulness * mul * (0.3 + baby) * d.energy, () => (this.act = { k: 'tail', t: 0, flip: 0 })],
-      [d.happiness > 0.6 && d.energy > 0.55 ? 0.3 * pers.playfulness * mul : 0, () => (this.act = { k: 'zoomies', t: 0, laps: 2 + Math.floor(r() * 3), toX: this.x })],
-      [0.25 * pers.vocal, () => this.react(this.growth > 0.5 && loud ? 'roar' : 'chirp', undefined, true)],
-      [d.happiness > 0.7 && d.energy > 0.4 ? 0.3 * pers.playfulness * mul : 0, () => (this.act = { k: 'dance', t: 0, dur: 3.5 + r() * 2.5, next: 0.4 })],
-      [pounceOk ? 1.6 * pers.curiosity * pers.playfulness * mul * d.energy : 0, () => (this.act = { k: 'pounce', phase: 'ready', t: 0, wait: 0.8 + r() * 0.7, tx: c!.x })],
-      [0.3 * (charger ? 1 : 0.4) * mul * d.energy, () => (this.act = { k: 'paw', t: 0, charge: charger && d.energy > 0.4 && r() < 0.6, next: 0.2 })],
-      [0.06, () => (this.act = { k: 'sneeze', t: 0, done: false })],
-      [0.1, () => (this.act = { k: 'shake', t: 0 })],
-    ];
-    const total = options.reduce((s, [w]) => s + Math.max(0, w), 0);
-    let pick = r() * total;
-    for (const [w, fn] of options) {
-      pick -= Math.max(0, w);
-      if (pick <= 0) {
-        fn();
-        return;
+    const activity = this.settings.activity;
+    const lively = activity === 'lively' ? 1 : activity === 'normal' ? 0.5 : 0;
+    const pace = this.pace;
+    const night = this.isNight();
+    const happy = d.happiness;
+    type Pick = [number, string, () => void];
+    const menu: Record<string, Pick[]> = {
+      rest: [
+        [3, 'idle', () => (this.act = this.idleAct((2 + r() * 4) * pace))],
+        [1.2 + tired * 2, 'sit', () => (this.act = { k: 'sit', t: 0, dur: (6 + r() * 14) * pace })],
+        [0.4 + tired * 3, 'lie', () => (this.act = { k: 'lie', t: 0, dur: (8 + r() * 18) * pace })],
+        [night || d.energy < 0.35 ? 1.5 : 0, 'nap', () => this.sleep('nap')],
+      ],
+      move: [
+        [2.2, 'walk', () => this.wander(false)],
+        [0.6 + 1.6 * lively * pers.speed, 'run', () => this.wander(true)],
+        [pl.x2 - pl.x1 > 400 ? 1 : 0, 'patrol', () => this.patrol()],
+        [cursorLevel && Math.abs(c!.x - this.x) > this.margin * 2 ? 1 + pers.curiosity : 0, 'follow', () => (this.act = { k: 'follow', t: 0 })],
+      ],
+      play: [
+        [d.energy > 0.4 ? 1 : 0.3, 'zoomies', () => (this.act = { k: 'zoomies', t: 0, laps: 1 + Math.floor(r() * 2), toX: this.x })],
+        [0.6 + baby, 'tail', () => (this.act = { k: 'tail', t: 0, flip: 0 })],
+        [happy > 0.5 ? 1.6 : 0.6, 'dance', () => (this.act = { k: 'dance', t: 0, dur: 3.5 + r() * 2.5, next: 0.4 })],
+        [1.2 * (0.3 + pers.jump), 'hop', () => (this.act = { k: 'hop', t: 0, n: 2 + Math.floor(r() * 3), next: 0.15 })],
+        [pounceOk ? 3 * (0.4 + pers.curiosity) : 0, 'pounce', () => (this.act = { k: 'pounce', phase: 'ready', t: 0, wait: 0.8 + r() * 0.7, tx: c!.x })],
+      ],
+      express: [
+        [0.8 + pers.vocal * 1.5, 'call', () => this.react(this.growth > 0.5 && loud ? 'roar' : 'chirp', undefined, true)],
+        [1.2, 'sniff', () => {
+          this.act = { ...this.idleAct(2.5 * pace), sniff: 1.6 };
+          this.sound('sniff', true);
+        }],
+        [charger ? 1.6 : 0.5, 'paw', () => (this.act = { k: 'paw', t: 0, charge: charger && d.energy > 0.4 && r() < 0.35 + 0.5 * lively, next: 0.2 })],
+        [0.3, 'sneeze', () => (this.act = { k: 'sneeze', t: 0, done: false })],
+        [0.8, 'shake', () => (this.act = { k: 'shake', t: 0 })],
+        [0.8, 'stretch', () => (this.act = { k: 'stretch', t: 0 })],
+        [0.9, 'gaze', () => (this.act = { k: 'gaze', t: 0, dur: 2 + r() * 2 })],
+      ],
+      social: [[1, 'watch', () => (this.act = { k: 'watch', t: 0, dur: (3 + r() * 5) * (0.6 + 0.4 * pace) })]],
+      explore: [[1, 'explore', () => this.explore(others)]],
+    };
+    const catW: Record<string, number> = {
+      rest: (activity === 'calm' ? 3.2 : activity === 'normal' ? 2 : 1.1) + tired * 3 + (night ? 1.5 : 0),
+      move: 1.4 + d.energy * 0.6,
+      play: (0.3 + 3 * lively) * (0.4 + pers.playfulness) * (0.2 + d.energy) * (0.5 + happy),
+      express: 0.9 + 0.6 * lively + pers.vocal * 0.4,
+      social: cursorNear ? 1.2 * (0.5 + pers.curiosity) : 0,
+      explore: others.length && this.settings.explore ? (0.6 + 1.8 * lively) * (0.35 + pers.jump) * d.energy : 0,
+    };
+    // Variety: the same kind of thing twice in a row is less likely, the same behaviour never.
+    if (this.lastCat in catW) catW[this.lastCat] *= 0.45;
+    const pickFrom = <T>(items: [number, T][]): T | null => {
+      const total = items.reduce((sum, [w]) => sum + Math.max(0, w), 0);
+      if (total <= 0) return null;
+      let x = r() * total;
+      for (const [w, v] of items) {
+        x -= Math.max(0, w);
+        if (x <= 0) return v;
       }
+      return items[items.length - 1][1];
+    };
+    const cat = pickFrom(Object.entries(catW).map(([k, w]) => [w, k] as [number, string]));
+    const options = cat ? menu[cat].filter(([w, name]) => w > 0 && (name !== this.lastBeh || menu[cat].length === 1)) : [];
+    const choice = pickFrom(options.map(([w, name, fn]) => [w, [name, fn]] as [number, [string, () => void]]));
+    if (!cat || !choice) {
+      this.act = this.idleAct(3 * pace);
+      return;
     }
-    this.act = this.idleAct(4);
+    this.lastCat = cat;
+    this.lastBeh = choice[0];
+    choice[1]();
+  }
+
+  /** Trot off towards the far side of the platform (not too far) and have a look around. */
+  private patrol() {
+    const p = this.platform;
+    const m = this.margin * 0.7;
+    const dirn = this.x - p.x1 > p.x2 - this.x ? -1 : 1;
+    const toX = clamp(this.x + dirn * 450 * Math.max(0.7, this.px), p.x1 + m, p.x2 - m);
+    this.act = { k: 'walk', toX, run: this.env.rand() < 0.4, dur: 12, t: 0 };
   }
 
   private wander(run: boolean) {
@@ -1099,7 +1164,7 @@ export class Pet {
     const r = this.env.rand;
     const rig = this.rig;
     rig.run = 0;
-    if (a.k !== 'walk' && a.k !== 'travel' && a.k !== 'chase' && a.k !== 'zoomies' && a.k !== 'hunt' && this.grounded) this.vx *= Math.max(0, 1 - dt * 12);
+    if (a.k !== 'walk' && a.k !== 'travel' && a.k !== 'chase' && a.k !== 'zoomies' && a.k !== 'hunt' && a.k !== 'follow' && this.grounded) this.vx *= Math.max(0, 1 - dt * 12);
     this.wantDrop = a.k === 'travel' && a.drop;
     switch (a.k) {
       case 'egg':
@@ -1132,12 +1197,12 @@ export class Pet {
         rig.run = a.run ? 1 : 0;
         this.pose('stand', a.charge ? { neck: -0.25, head: -0.25, tailLift: 0.25, pitch: -0.05 } : undefined);
         if (this.walkTo(a.toX, a.run, dt) || a.t > a.dur) {
+          this.act = this.idleAct((1 + r() * 3) * this.pace);
           if (a.charge) {
             // Skid to a stop.
             this.events.push({ type: 'dust', x: this.x + this.facing * this.margin, y: this.y, big: true });
             this.sound('thud', true);
           }
-          this.act = this.idleAct(1 + r() * 3);
         }
         return;
       case 'travel': {
@@ -1446,8 +1511,10 @@ export class Pet {
         const m = this.margin * 0.7;
         if (this.walkTo(a.toX, true, dt)) {
           a.laps--;
-          a.toX = a.toX > (p.x1 + p.x2) / 2 ? p.x1 + m + this.env.rand() * 60 : p.x2 - m - this.env.rand() * 60;
-          if (a.laps < 0 || a.t > 12) this.act = this.idleAct(2);
+          // Dash back and forth over a stretch of the platform, not the whole screen.
+          const span = Math.min(p.x2 - p.x1 - 2 * m, 520 * Math.max(0.7, this.px));
+          a.toX = clamp(this.x + (a.toX > this.x ? -1 : 1) * span * (0.6 + 0.4 * this.env.rand()), p.x1 + m, p.x2 - m);
+          if (a.laps < 0 || a.t > 7) this.act = this.idleAct(1.5 * this.pace);
         }
         return;
       }
@@ -1546,6 +1613,51 @@ export class Pet {
             this.sound('whoosh');
           }
         } else this.pose('jump', { jaw: 0.6, arms: 0.9 });
+        return;
+      }
+      case 'hop':
+        a.t += dt;
+        this.pose('happy', { tailLift: 0.35 });
+        if (this.grounded && (a.next -= dt) <= 0) {
+          if (a.n <= 0) {
+            this.act = this.idleAct(1 + r());
+            return;
+          }
+          a.n--;
+          a.next = 0.12;
+          this.vy = -(200 + 90 * r()) * Math.max(0.6, this.px) * (0.8 + 0.4 * this.species.personality.jump);
+          this.vx = this.facing * (r() < 0.5 ? 40 : 0) * Math.max(0.6, this.px);
+          this.grounded = false;
+          this.events.push({ type: 'squash', amount: -0.12 });
+          this.act = { k: 'fall', t: 0, resume: a, voluntary: true };
+        }
+        return;
+      case 'stretch':
+        a.t += dt;
+        this.pose(a.t < 1.4 ? 'stretch' : a.t < 2.2 ? 'yawn' : 'stand');
+        if (a.t > 2.5) this.act = this.idleAct(1 + r());
+        return;
+      case 'gaze':
+        a.t += dt;
+        this.pose('look_up');
+        if (a.t > a.dur) this.act = this.idleAct(1 + r());
+        return;
+      case 'follow': {
+        a.t += dt;
+        const c = this.cursor;
+        const pl = this.platform;
+        if (!c || a.t > 7 || c.y < pl.y - this.heightPx * 2.5 || c.y > pl.y + 60) {
+          this.act = this.idleAct(1 + r());
+          return;
+        }
+        const tx = clamp(c.x - this.facing * this.margin * 1.2, pl.x1 + this.margin, pl.x2 - this.margin);
+        const far = Math.abs(tx - this.x) > 220;
+        rig.run = far ? 1 : 0;
+        this.pose('alert', { tailWag: 0.15 });
+        if (this.walkTo(tx, far, dt)) {
+          this.facing = c.x >= this.x ? 1 : -1;
+          this.act = { k: 'watch', t: 0, dur: 2 + r() * 3 };
+        }
         return;
       }
       case 'hunt': {
