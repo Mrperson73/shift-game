@@ -1,0 +1,82 @@
+name: Knobs
+
+on:
+  push:
+    paths: ['knobs/**', '.github/workflows/knobs.yml']
+    tags: ['knobs-v*']
+  pull_request:
+    paths: ['knobs/**', '.github/workflows/knobs.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: knobs
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: knobs/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: End-to-end tests (real Electron app under Xvfb)
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb xdotool
+          npx playwright install-deps chromium >/dev/null 2>&1 || true
+          xvfb-run -a -s "-screen 0 1600x1000x24" npm run test:e2e
+
+  package:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: knobs/package-lock.json
+      - run: npm ci
+      - name: Build Windows installer + portable zip
+        if: runner.os == 'Windows'
+        run: npm run dist:win
+      - name: Build Linux AppImage
+        if: runner.os == 'Linux'
+        run: npm run dist:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: knobs-${{ runner.os }}
+          path: |
+            knobs/release/*.exe
+            knobs/release/*.zip
+            knobs/release/*.AppImage
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/knobs-v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish GitHub release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --repo "$GITHUB_REPOSITORY" --title "Knobs ${GITHUB_REF_NAME#knobs-v}" --notes "Windows: run the Setup .exe (or unzip the portable build). Linux: chmod +x the AppImage."

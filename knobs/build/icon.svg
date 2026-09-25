@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2029"/><stop offset="1" stop-color="#0d0f13"/></linearGradient>
+    <linearGradient id="k" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffb35c"/><stop offset="1" stop-color="#ff7a2e"/></linearGradient>
+    <radialGradient id="shine" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="110" fill="url(#bg)"/>
+  <rect x="16.5" y="16.5" width="479" height="479" rx="109.5" fill="none" stroke="#2c3341" stroke-width="3"/>
+  <g transform="translate(256 262)">
+    <circle cx="-99.0" cy="99.0" r="8" fill="#ff9a3c"/>
+    <circle cx="-121.2" cy="70.0" r="8" fill="#ff9a3c"/>
+    <circle cx="-135.2" cy="36.2" r="8" fill="#ff9a3c"/>
+    <circle cx="-140.0" cy="0.0" r="8" fill="#ff9a3c"/>
+    <circle cx="-135.2" cy="-36.2" r="8" fill="#ff9a3c"/>
+    <circle cx="-121.2" cy="-70.0" r="8" fill="#ff9a3c"/>
+    <circle cx="-99.0" cy="-99.0" r="8" fill="#ff9a3c"/>
+    <circle cx="-70.0" cy="-121.2" r="8" fill="#ff9a3c"/>
+    <circle cx="-36.2" cy="-135.2" r="8" fill="#ff9a3c"/>
+    <circle cx="-0.0" cy="-140.0" r="8" fill="#ff9a3c"/>
+    <circle cx="36.2" cy="-135.2" r="8" fill="#ff9a3c"/>
+    <circle cx="70.0" cy="-121.2" r="8" fill="#ff9a3c"/>
+    <circle cx="99.0" cy="-99.0" r="8" fill="#ff9a3c"/>
+    <circle cx="121.2" cy="-70.0" r="7" fill="#2f3746"/>
+    <circle cx="135.2" cy="-36.2" r="7" fill="#2f3746"/>
+    <circle cx="140.0" cy="-0.0" r="7" fill="#2f3746"/>
+    <circle cx="135.2" cy="36.2" r="7" fill="#2f3746"/>
+    <circle cx="121.2" cy="70.0" r="7" fill="#2f3746"/>
+    <circle cx="99.0" cy="99.0" r="7" fill="#2f3746"/>
+    <circle r="112" fill="url(#k)"/>
+    <circle r="112" fill="url(#shine)"/>
+    <circle r="76" fill="#1a1510" opacity=".18"/>
+    <line x1="0" y1="0" x2="62" y2="-62" stroke="#1b130c" stroke-width="26" stroke-linecap="round"/>
+  </g>
+</svg>
