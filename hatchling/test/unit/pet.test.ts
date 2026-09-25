@@ -350,8 +350,8 @@ describe('pet', () => {
       const { pet, run, events } = make({ species, hours: 60 });
       pet.act = { k: 'walk', toX: 200, run: true, dur: 20, t: 0 };
       pet.x = 1200;
-      run(4);
-      expect(events.filter((e) => e.type === 'dust').length, species.id).toBeGreaterThan(3);
+      run(6);
+      expect(events.filter((e) => e.type === 'dust').length, species.id).toBeGreaterThan(1);
       expect(events.some((e) => e.type === 'sound' && e.name === 'step'), species.id).toBe(true);
     }
   });

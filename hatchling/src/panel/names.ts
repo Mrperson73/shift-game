@@ -12,6 +12,7 @@ const NAMES: Record<string, string[]> = {
   dilo: ['Frill', 'Spitz', 'Crest', 'Dilly', 'Zigzag', 'Pickle', 'Twiggy', 'Venom', 'Juniper', 'Slick'],
   parasaur: ['Toot', 'Honk', 'Tuba', 'Melody', 'Crest', 'Echo', 'Banjo', 'Kazoo', 'Piper', 'Harmony'],
   galli: ['Dash', 'Zoom', 'Pip', 'Flick', 'Road', 'Skippy', 'Twitch', 'Nimble', 'Pecky', 'Breeze'],
+  brachio: ['Longneck', 'Treetop', 'Gentle', 'Skyler', 'Willow', 'Bertha', 'Stretch', 'Atlas', 'Cloud', 'Maple'],
 };
 
 const GENERIC = ['Hatch', 'Pebble', 'Scales', 'Mochi', 'Biscuit', 'Nova', 'Sunny', 'Ziggy', 'Tater', 'Olive'];

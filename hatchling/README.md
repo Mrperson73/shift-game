@@ -2,9 +2,9 @@
 
 **A dinosaur that lives on your desktop and grows up with you.**
 
-Pick one of 11 eggs, click it on your taskbar, and a baby dinosaur hatches. It walks along your taskbar, climbs the sides of your windows and wanders along their tops. It dances, pounces on your cursor, chases butterflies, naps when you step away and roars when you launch a game. It grows from a big-headed hatchling to an adult over a few weeks of real use, and your progress is saved automatically.
+Pick one of 12 eggs, click it on your taskbar, and a baby dinosaur hatches. It walks along your taskbar, climbs the sides of your windows and wanders along their tops. It dances, pounces on your cursor, chases butterflies, naps when you step away and roars when you launch a game. It grows from a big-headed hatchling to an adult over a few weeks of real use, and your progress is saved automatically.
 
-It runs fully offline and is built to stay open all day: it barely uses your CPU. No account, no internet, no tracking.
+The dinosaurs are drawn live with smooth, realistic body shapes (muscular legs, proper proportions), and hatchlings are big-eyed and cute. It runs fully offline and is built to stay open all day: it barely uses your CPU. No account, no internet, no tracking.
 
 ## Install (Windows)
 
@@ -29,6 +29,7 @@ To uninstall, go to **Settings → Apps → Installed apps → Hatchling**. This
 | **Dilo** (*Dilophosaurus*) | A chatty show-off | Two thin head crests; sneaky and quick |
 | **Parasaur** (*Parasaurolophus*) | Friendly and LOUD | A long tube crest; honks like a trumpet |
 | **Galli** (*Gallimimus*) | Zero chill | Feathered, long-legged, the fastest runner; eats berries |
+| **Brachio** (*Brachiosaurus*) | A gentle giant | Four legs and a giraffe neck; lowers it to eat and lays it down to sleep |
 
 **Colours.** Every species has six colour schemes, from natural camouflage to albino and neon, with stripes, bands, spots, rosettes, speckles or a saddle. About 1 egg in 20 hatches **shiny**: rare colours and sparkles. You can recolour your pet any time from its card, including picking every colour by hand.
 
@@ -96,7 +97,8 @@ Tip: give an AI the `README.txt` from that folder and ask for "a Hatchling speci
 
 Hatchling is made to stay open all day:
 
-- It redraws only as often as the pet needs: up to 60 frames a second while something moves (never more, even on 144 Hz screens), 20 while it idles, 10 while it sleeps, and none at all while it's hidden or your PC is locked.
+- It redraws only as often as the pet needs: 60 frames a second while it runs, jumps or is carried (never more, even on 144 Hz screens), 30 while it walks, 15 while it idles, 8 while it sleeps, and none at all while it's hidden or your PC is locked.
+- It draws on a canvas just big enough for the pet, and only checks exactly where the pet is when the cursor is near it.
 - It checks the mouse 30 times a second only while you move it, and window positions 5 times a second (faster only while you drag a window, slower while it sleeps).
 - The sound device is released a few seconds after the last sound.
 - It runs Chromium's network layer inside the app instead of in an extra helper process, since it never uses the network.

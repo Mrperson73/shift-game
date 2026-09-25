@@ -1,8 +1,9 @@
 // The overlay renderer: runs the pet simulation, draws it, and handles the mouse.
 // The window is click-through except while the cursor is over the pet (or its ball).
 //
-// Power: it redraws only as often as the pet needs — up to 60 fps while something moves, 20 fps
-// while it idles, 10 fps asleep, and not at all while hidden or while the PC is locked.
+// Power: it redraws only as often as the pet needs: 60 fps while it runs, jumps or is carried,
+// 30 while it walks, 15 while it idles (30 when you're near it), 8 asleep, and not at all while
+// hidden or while the PC is locked.
 
 import { drawEgg, drawPet, type Palette, paletteFor } from '../pet/draw';
 import { stageName, stageOf } from '../pet/growth';
@@ -35,7 +36,10 @@ let captured = false;
 let down: { x: number; y: number; t: number } | null = null;
 let dragging: 'pet' | 'ball' | null = null;
 let frames = 0;
-let canvasSize = 0;
+let canvasW = 0;
+let canvasH = 0;
+/** Where the pet's feet are inside the canvas. */
+let canvasFeet = 0;
 let pop = 1;
 let dirty = true;
 let lastSave = 0;
@@ -80,24 +84,31 @@ function makePet(data: PetData, width: number, height: number) {
 
 // ---------------- drawing ----------------
 
+/** Sizes the canvas to the pet: wide and short while it stands (little below its feet), square
+ * while it climbs or is carried. Fewer pixels to clear and composite every frame. */
 function resizeCanvas() {
   const p = pet.rig.p;
   const ext = pet.hatched ? (p.tailLen + p.bodyLen + p.neckLen + p.headLen + p.hipHeight * 0.4) * pet.px : pet.eggSize * 1.4;
-  const size = Math.ceil(ext * 2 + 24);
-  if (Math.abs(size - canvasSize) < 2) return;
-  canvasSize = size;
-  canvas.width = Math.ceil(size * dpr());
-  canvas.height = Math.ceil(size * dpr());
-  canvas.style.width = canvas.style.height = `${size}px`;
+  const w = Math.ceil(ext * 2 + 24);
+  const tall = !pet.hatched || pet.rot !== 0 || pet.held;
+  const below = tall ? ext + 12 : Math.ceil(ext * 0.15 + 12);
+  const h = Math.ceil(ext + 12 + below);
+  if (Math.abs(w - canvasW) < 2 && Math.abs(h - canvasH) < 2) return;
+  canvasW = w;
+  canvasH = h;
+  canvasFeet = h - below;
+  canvas.width = Math.ceil(w * dpr());
+  canvas.height = Math.ceil(h * dpr());
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
 }
 
 function draw() {
   resizeCanvas();
-  const S = canvasSize;
   ctx.setTransform(dpr(), 0, 0, dpr(), 0, 0);
-  ctx.clearRect(0, 0, S, S);
+  ctx.clearRect(0, 0, canvasW, canvasH);
   ctx.save();
-  ctx.translate(S / 2, S / 2);
+  ctx.translate(canvasW / 2, canvasFeet);
   if (!pet.hatched) {
     drawEgg(ctx, pet.eggSize, pal, pet.egg.wobble, pet.egg.crack, pet.egg.open);
   } else {
@@ -112,7 +123,7 @@ function draw() {
     drawPet(ctx, pet.rig, pal, speciesOf(pet.data.species).features, { scale: pet.px, outline, shadow: pet.grounded && pet.rot === 0 });
   }
   ctx.restore();
-  canvas.style.transform = `translate(${pet.x - S / 2}px, ${pet.y - S / 2}px)`;
+  canvas.style.transform = `translate(${pet.x - canvasW / 2}px, ${pet.y - canvasFeet}px)`;
 }
 
 // Food, ball, butterfly and eggshell sprites.
@@ -213,7 +224,7 @@ function handle(events: SimEvent[]) {
         sounds.play(e.name, { soft: e.soft, pan: ((pet.x / Math.max(1, pet.world.width)) * 2 - 1) * 0.6 });
         break;
       case 'dust':
-        fx.dust(e.x, e.y, e.big, Math.max(0.6, pet.px));
+        fx.dust(e.x, e.y, e.big, Math.max(0.6, pet.px), e.small ? 2 : undefined);
         break;
       case 'crumbs': {
         const food = pet.species.food;
@@ -297,7 +308,7 @@ function step(now: number) {
   }
   if (dirty) {
     dirty = false;
-    canvasSize = 0;
+    canvasW = 0;
   }
   const t = Date.now();
   if (saveSoon && (saveSoon -= anim) <= 0) {
@@ -339,17 +350,25 @@ function loop() {
   schedule();
 }
 
-const MOVING = new Set(['walk', 'travel', 'jump', 'fall', 'move', 'climb', 'land', 'held', 'chase', 'zoomies', 'tail', 'hatch', 'pounce', 'hunt', 'shake', 'dizzy']);
-const CALM = new Set(['idle', 'sit', 'lie', 'watch', 'wake']);
+/** Fast motion that needs smooth frames. Walking is fine at 30 fps; running and jumping aren't. */
+const FAST = new Set(['jump', 'fall', 'move', 'climb', 'land', 'held', 'chase', 'zoomies', 'tail', 'hatch', 'pounce', 'hop']);
+const WALK = new Set(['walk', 'travel', 'follow', 'hunt', 'shake', 'dizzy', 'dance', 'paw']);
+const CALM = new Set(['idle', 'sit', 'lie', 'watch', 'wake', 'gaze', 'stretch']);
 
 /** How often the pet needs to be redrawn right now. */
 function fps() {
   if (hidden || locked) return 1;
   if (!pet.hatched) return pet.egg.wobbleT > 0 || pet.act.k === 'hatch' || captured ? 30 : 8;
-  const busy = pet.foods.length > 0 || !!pet.ball || !!pet.butterfly || !!dragging || pop < 1 || squash !== 0 || !pet.grounded || Math.abs(pet.vx) > 1;
-  if (busy || MOVING.has(pet.act.k)) return 60;
-  if (pet.asleep) return 10;
-  if (CALM.has(pet.act.k)) return captured ? 30 : 20;
+  // Only things that actually move need smooth frames: a resting ball or food on the ground doesn't.
+  const b = pet.ball;
+  const ballMoving = !!b && (b.held || Math.abs(b.vx) > 1 || b.vy !== 0);
+  const effects = pet.foods.some((f) => !f.landed) || ballMoving || !!pet.butterfly || !!dragging || pop < 1 || squash !== 0;
+  if (effects || !pet.grounded || pet.rot !== 0 || FAST.has(pet.act.k)) return 60;
+  const speed = Math.abs(pet.vx);
+  if (speed > pet.walkSpeed * 1.25 || pet.rig.run > 0.5) return 60;
+  if (speed > 1 || WALK.has(pet.act.k)) return 30;
+  if (pet.asleep) return 8;
+  if (CALM.has(pet.act.k)) return captured || (cursor && nearPet(cursor)) ? 30 : 15;
   return 30;
 }
 
@@ -384,9 +403,15 @@ function setCapture(on: boolean) {
   document.body.classList.toggle('hover', on);
 }
 
+/** Cheap box check before the exact one: most of the time the cursor is nowhere near the pet. */
+function nearPet(c: { x: number; y: number }) {
+  const r = canvasW / 2 || 200;
+  return Math.abs(c.x - pet.x) < r && c.y > pet.y - r && c.y < pet.y + r;
+}
+
 function updateHover() {
   if (dragging || down) return;
-  setCapture(!!cursor && !hidden && !locked && (pet.hitTest(cursor) || overBall(cursor)));
+  setCapture(!!cursor && !hidden && !locked && ((nearPet(cursor) && pet.hitTest(cursor)) || overBall(cursor)));
 }
 
 /** Let go of whatever is held (mouse released, focus lost, or a missed mouseup). */

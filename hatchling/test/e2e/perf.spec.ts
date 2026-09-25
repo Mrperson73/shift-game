@@ -31,7 +31,8 @@ test('cpu by state', async () => {
   await measure('idle', `${T}.act = { k: 'idle', t: 0, dur: 1e9, nextLook: 1, look: null, sniff: 0 }`);
   await measure('sitting', `${T}.act = { k: 'sit', t: 0, dur: 1e9 }`);
   await measure('asleep', `${T}.sleepNow()`);
-  await measure('walking', `${T}.wakeNow(); ${T}.act = { k: 'zoomies', t: 0, laps: 1e9, toX: 100 }`);
+  await measure('walking', `${T}.wakeNow(); ${T}.act = { k: 'walk', toX: 60, run: false, dur: 1e9, t: 0 }; setInterval(() => { const p = ${T}; if (p.act.k === 'walk') p.act.toX = p.x < 400 ? 1200 : p.x > 1100 ? 100 : p.act.toX; }, 500)`);
+  await measure('running', `${T}.act = { k: 'zoomies', t: 0, laps: 1e9, toX: 100 }`);
 
   await app.evaluate(() => (global as unknown as { __hatchling: { sendOverlay: (c: string, p: unknown) => void } }).__hatchling.sendOverlay('hidden', true));
   await measure('hidden', `0`);

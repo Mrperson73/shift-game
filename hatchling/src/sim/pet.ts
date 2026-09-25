@@ -18,7 +18,7 @@ export type SimEvent =
   | { type: 'emote'; kind: EmoteKind }
   | { type: 'say'; text: string }
   | { type: 'sound'; name: SoundName; soft?: boolean }
-  | { type: 'dust'; x: number; y: number; big: boolean }
+  | { type: 'dust'; x: number; y: number; big: boolean; small?: boolean }
   | { type: 'crumbs'; x: number; y: number }
   | { type: 'hatched' }
   | { type: 'grew'; stage: Stage }
@@ -110,6 +110,8 @@ export interface Env {
 }
 
 const G = 2100;
+/** Things it drops as soon as there's food to go for. */
+const INTERRUPTIBLE = new Set(['idle', 'sit', 'lie', 'walk', 'travel', 'watch', 'gaze', 'stretch', 'follow', 'dance', 'zoomies', 'tail', 'paw', 'sneeze', 'shake', 'hunt', 'chase', 'hop']);
 const TAU = Math.PI * 2;
 const ACTIVITY_MUL = { calm: 0.55, normal: 1, lively: 1.6 } as const;
 
@@ -602,7 +604,7 @@ export class Pet {
     const running = r.run > 0.5;
     if (!heavy && !running) return;
     const foot = this.toWorld({ x: r.stepX, y: 0 });
-    if (running || this.env.rand() < 0.5) this.events.push({ type: 'dust', x: foot.x, y: this.y, big: false });
+    if (running ? this.env.rand() < 0.6 : this.env.rand() < 0.35) this.events.push({ type: 'dust', x: foot.x, y: this.y, big: false, small: true });
     if (heavy && this.time - this.stepSoundAt > 0.22) {
       this.stepSoundAt = this.time;
       this.sound('step', true);
@@ -789,6 +791,8 @@ export class Pet {
     if (!this.hatched) return;
     if (impact > 700) this.sound('thud', impact < 1100);
     const a = this.act;
+    // Told to nap mid-hop: just keep sleeping once down.
+    if (a.k === 'sleep') return;
     const resume = a.k === 'jump' ? a.resume : a.k === 'fall' ? a.resume : null;
     this.act = { k: 'land', t: 0, hard, resume };
     // Shaking itself off after being thrown around.
@@ -918,6 +922,7 @@ export class Pet {
 
   private sleep(reason: SleepReason) {
     this.data.stats.naps++;
+    if (this.butterfly) this.butterfly.leaving = true;
     const dur = reason === 'nap' ? 90 + this.env.rand() * 240 : reason === 'command' ? 30 * 60 : 1e9;
     this.act = { k: 'sleep', reason, t: 0, dur, nextZ: 2.5 };
     this.vx = 0;
@@ -1166,6 +1171,14 @@ export class Pet {
     rig.run = 0;
     if (a.k !== 'walk' && a.k !== 'travel' && a.k !== 'chase' && a.k !== 'zoomies' && a.k !== 'hunt' && a.k !== 'follow' && this.grounded) this.vx *= Math.max(0, 1 - dt * 12);
     this.wantDrop = a.k === 'travel' && a.drop;
+    // Food beats whatever it was doing (except eating, sleeping, or being mid-air or mid-climb).
+    if (this.grounded && !this.held && INTERRUPTIBLE.has(a.k) && !(a.k === 'travel' && (a.purpose === 'food' || a.drop))) {
+      const food = this.foods.find((f) => f.landed);
+      if (food) {
+        this.goTo(food.x, food.y, 'food', true);
+        return;
+      }
+    }
     switch (a.k) {
       case 'egg':
       case 'hatch':
@@ -1387,7 +1400,8 @@ export class Pet {
         a.t += dt;
         this.pose(a.t < 2.5 ? 'drowsy' : 'sleep');
         if (a.t > 2.5 && (a.nextZ -= dt) <= 0) {
-          a.nextZ = 2.8 + r() * 1.5;
+          // Fewer z's once it's deep asleep (each one is a small animation to draw).
+          a.nextZ = (a.t < 60 ? 2.8 : 7) + r() * 1.5;
           this.emote('zzz');
           if (r() < 0.15) this.sound('snore');
         }

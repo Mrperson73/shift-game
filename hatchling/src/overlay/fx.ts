@@ -87,8 +87,8 @@ export class Fx {
     }
   }
 
-  dust(x: number, y: number, big: boolean, scale: number) {
-    const n = big ? 6 : 4;
+  dust(x: number, y: number, big: boolean, scale: number, count?: number) {
+    const n = count ?? (big ? 6 : 4);
     for (let i = 0; i < n; i++) {
       const r = (big ? 9 : 6) * scale * (0.7 + Math.random() * 0.6);
       const d = this.el('dust', x, y - r * 0.5);
