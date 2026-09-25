@@ -36,6 +36,18 @@ async function gameFrame(): Promise<Frame> {
 }
 
 const probe = (f: Frame) => f.evaluate(() => (window as unknown as { probe: Record<string, unknown> }).probe);
+
+/** After pausing, a frame already in flight may still land: wait until the counter stops moving. */
+async function stableFrames(f: Frame): Promise<number> {
+  let prev = -1;
+  for (let i = 0; i < 20; i++) {
+    const n = (await probe(f)).frames as number;
+    if (n === prev) return n;
+    prev = n;
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  throw new Error('frame counter never settled — game is not paused');
+}
 const knob = (label: string) => win.locator('.knob', { has: win.locator('.knob-name', { hasText: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }) });
 
 test.describe.serial('Knobs app', () => {
@@ -136,7 +148,7 @@ test.describe.serial('Knobs app', () => {
     await win.locator('.panel-head').click();
     await win.keyboard.press('F6');
     await expect(win.locator('.paused-badge')).toBeVisible();
-    const a = (await probe(f)).frames as number;
+    const a = await stableFrames(f);
     await win.waitForTimeout(300);
     expect((await probe(f)).frames).toBe(a);
     await win.keyboard.press('F7');
@@ -153,7 +165,7 @@ test.describe.serial('Knobs app', () => {
     await expect(win.locator('.stage.focused')).toBeVisible();
     execSync('xdotool key F6');
     await expect(win.locator('.paused-badge')).toBeVisible();
-    const a = (await probe(f)).frames as number;
+    const a = await stableFrames(f);
     execSync('xdotool key F7');
     await expect.poll(async () => (await probe(f)).frames).toBe(a + 1);
     execSync('xdotool key F6');

@@ -79,4 +79,8 @@ jobs:
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/* --repo "$GITHUB_REPOSITORY" --title "Knobs ${GITHUB_REF_NAME#knobs-v}" --notes "Windows: run the Setup .exe (or unzip the portable build). Linux: chmod +x the AppImage."
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Knobs ${GITHUB_REF_NAME#knobs-v}" \
+            --notes "Windows - run the Setup .exe, or unzip the portable build. Linux - chmod +x the AppImage."
