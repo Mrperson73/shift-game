@@ -10,7 +10,7 @@ fs.mkdirSync(path.dirname(html), { recursive: true });
 fs.writeFileSync(html, `<!doctype html><meta charset="utf-8"><body><script>${js.outputFiles[0].text}</script>`);
 const browser = await chromium.launch({ executablePath: ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => fs.existsSync(p)), args: ['--enable-gpu-rasterization'] });
 const page = await browser.newPage();
-await page.goto(`file://${html}`);
+await page.goto(`file://${html}${process.argv[2] ? `?ids=${process.argv[2]}` : ""}`);
 await page.waitForFunction(() => window.result, null, { timeout: 120_000 });
 console.log(await page.evaluate(() => window.result));
 await browser.close();

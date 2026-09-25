@@ -201,6 +201,15 @@ export class Rig {
     return this.p.thigh + this.p.shin;
   }
 
+  /** How far the drawing can reach from the feet, in rig units (before size): its whole length, or its wingspan. */
+  get reach() {
+    const p = this.p;
+    const length = p.tailLen + p.bodyLen + p.neckLen + p.headLen + p.hipHeight * 0.4;
+    if (!this.species.features.wings) return length;
+    const wing = this.quad ? p.fThigh + p.fShin + p.fMeta + (p.fThigh + p.fShin) * 1.45 : (p.armUpper + p.armFore) * 2.6;
+    return Math.max(length, wing + p.hipHeight);
+  }
+
   /** Approximate standing height in rig units (before size). */
   get height() {
     const p = this.p;

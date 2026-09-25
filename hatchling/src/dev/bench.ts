@@ -14,7 +14,7 @@ canvas.width = 800;
 canvas.height = 500;
 document.body.appendChild(canvas);
 const ctx = canvas.getContext('2d')!;
-for (const id of ['rex', 'trike', 'spino', 'brachio']) {
+for (const id of (new URLSearchParams(location.search).get('ids') ?? 'rex,trike,spino,brachio').split(',')) {
   const sp = BUILT_IN.find((s) => s.id === id)!;
   const r = new Rig(sp, 1, rng(1));
   applyPose(r, 'stand');
