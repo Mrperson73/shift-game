@@ -39,6 +39,8 @@ export class Fx {
 
   emote(kind: EmoteKind, x: number, y: number, size: number) {
     const s = Math.round(Math.max(16, Math.min(34, size)));
+    // Keep it on screen when the pet stands on a window near the top.
+    y = Math.max(y, s + 6);
     if (kind === 'zzz') {
       const d = this.el('zzz', x + s * 0.2, y, 'z');
       d.style.fontSize = `${Math.round(s * 0.7)}px`;
@@ -64,7 +66,7 @@ export class Fx {
 
   say(text: string, x: number, y: number) {
     this.bubble?.remove();
-    const d = this.el('bubble', x, y);
+    const d = this.el('bubble', x, Math.max(y, 48));
     d.textContent = text;
     this.bubble = d;
     this.bubbleUntil = performance.now() + 2600 + text.length * 60;
@@ -75,7 +77,7 @@ export class Fx {
     const b = this.bubble;
     if (!b) return;
     b.style.left = `${x}px`;
-    b.style.top = `${y}px`;
+    b.style.top = `${Math.max(y, 48)}px`;
     if (performance.now() > this.bubbleUntil && !b.classList.contains('out')) {
       b.classList.add('out');
       setTimeout(() => {
