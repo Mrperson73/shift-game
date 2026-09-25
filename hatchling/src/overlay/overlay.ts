@@ -401,18 +401,8 @@ function endPointer(at?: { x: number; y: number }) {
   wake();
 }
 
-let lastMove = { x: -1, y: -1 };
-
 window.addEventListener('mousemove', (e) => {
   const p = { x: e.clientX, y: e.clientY };
-  // The button was released somewhere we didn't hear about. (Chromium also sends synthetic moves
-  // without buttons when the page changes under a still cursor; those don't move, so skip them.)
-  const moved = Math.abs(p.x - lastMove.x) + Math.abs(p.y - lastMove.y) > 2;
-  lastMove = p;
-  if (down && e.buttons === 0 && moved) {
-    endPointer(p);
-    return;
-  }
   const prev = cursor;
   cursor = p;
   if (down && !dragging && Math.hypot(p.x - down.x, p.y - down.y) > 5) {
@@ -432,11 +422,11 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   down = { x: e.clientX, y: e.clientY, t: performance.now() };
-  lastMove = { x: e.clientX, y: e.clientY };
 });
 
-// Keep receiving the pointer while the button is down, even outside the window, so a release is
-// never missed; if the system takes the pointer away, let go.
+// Keep receiving the pointer while the button is down, even outside the window, so the release is
+// never missed; if the system takes the pointer away, let go. (Don't guess a release from a move
+// without buttons: Windows and Chromium send those when the window starts taking the mouse.)
 window.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
   try {
