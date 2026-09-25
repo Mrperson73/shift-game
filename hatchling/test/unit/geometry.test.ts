@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CAPTION_SPACE, computeWorld, ICON_SPACE } from '../../src/main/geometry';
-import { detectGame } from '../../src/main/games';
+import { detectGame, gamePids } from '../../src/main/games';
 
 const area = { x: 0, y: 0, width: 1920, height: 1032 };
 
@@ -59,5 +59,19 @@ describe('detectGame', () => {
     expect(detectGame(new Set(['javaw.exe']), [{ exe: 'javaw.exe', title: 'Minecraft* 1.21.4 - Singleplayer' }])).toBe('Minecraft');
     expect(detectGame(new Set(['javaw.exe']), [{ exe: 'javaw.exe', title: 'IntelliJ IDEA' }])).toBeNull();
     expect(detectGame(new Set(['minecraftlauncher.exe', 'brawlhallaeac.exe']), [])).toBeNull();
+  });
+
+  it('finds the processes of running games', () => {
+    const procs = new Map([
+      [10, 'explorer.exe'],
+      [20, 'brawlhalla.exe'],
+      [30, 'javaw.exe'],
+      [40, 'javaw.exe'],
+    ]);
+    const pids = gamePids(procs, [
+      { pid: 30, title: 'Minecraft 1.21.4' },
+      { pid: 40, title: 'Some Java tool' },
+    ]);
+    expect([...pids].sort()).toEqual([20, 30]);
   });
 });

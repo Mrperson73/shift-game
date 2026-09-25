@@ -5,7 +5,7 @@ import { BUILT_IN, type SpeciesDef } from '../pet/species';
 import type { WorldUpdate } from '../shared/api';
 import { type Activity, type Command, type ModProblem, newPet, type OverlayInit, type PanelInit, type Settings } from '../shared/types';
 import { type Desktop, openDesktop } from './desktop';
-import { detectGame } from './games';
+import { detectGame, gamePids } from './games';
 import { computeWorld, type WinRect } from './geometry';
 import { allSpecies, ensureModsFolder } from './mods';
 import { sanitizeName, sanitizePet, sanitizeSettings, Store } from './store';
@@ -46,6 +46,8 @@ let hiddenUntil = 0;
 let overlayHidden = false;
 let locked = false;
 let game: string | null = null;
+/** Windows of running games are left out of the pet's world, so it never walks over a game. */
+let games = new Set<number>();
 let lastWorld = '';
 let lastCursor = '';
 let statusText = 'Hatchling';
@@ -177,7 +179,7 @@ function pollWorld() {
   let update: WorldUpdate = { width: wa.width, height: wa.height, platforms: [], walls: [] };
   if (desktop.available && settings().explore) {
     try {
-      const wins: WinRect[] = desktop.windows(ownHandles()).map((w) => {
+      const wins: WinRect[] = desktop.windows(ownHandles()).filter((w) => !games.has(w.pid)).map((w) => {
         const r = screen.screenToDipRect(null, { x: w.left, y: w.top, width: w.right - w.left, height: w.bottom - w.top });
         return { hwnd: w.hwnd, x: r.x, y: r.y, w: r.width, h: r.height };
       });
@@ -231,8 +233,9 @@ function pollActivity() {
       const procs = desktop.processes();
       const exes = new Set(procs.values());
       const needTitles = exes.has('javaw.exe') || exes.has('java.exe');
-      const titles = needTitles ? desktop.windows(new Set()).map((w) => ({ exe: procs.get(w.pid) ?? '', title: w.title })) : [];
-      game = detectGame(exes, titles);
+      const wins = needTitles ? desktop.windows(new Set()) : [];
+      game = detectGame(exes, wins.map((w) => ({ exe: procs.get(w.pid) ?? '', title: w.title })));
+      games = gamePids(procs, wins);
     } catch (e) {
       log(`processes: ${(e as Error).message}`);
     }

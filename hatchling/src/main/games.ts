@@ -15,6 +15,18 @@ export const GAMES: GameRule[] = [
   { name: 'Minecraft', exe: /^javaw?\.exe$/i, title: /^minecraft\*?\s*\d/i },
 ];
 
+/** Process ids of running games, so the pet can keep off their windows. */
+export function gamePids(procs: Map<number, string>, titles: { pid: number; title: string }[]): Set<number> {
+  const out = new Set<number>();
+  for (const [pid, exe] of procs) {
+    for (const g of GAMES) {
+      if (!g.exe.test(exe)) continue;
+      if (!g.title || titles.some((t) => t.pid === pid && g.title!.test(t.title))) out.add(pid);
+    }
+  }
+  return out;
+}
+
 /**
  * @param exes lower-case exe names of running processes
  * @param titles window titles with the exe name of their process

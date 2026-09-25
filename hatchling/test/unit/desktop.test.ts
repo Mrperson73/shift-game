@@ -32,6 +32,18 @@ describe('win32 bindings', () => {
     expect(e.szExeFile).toBe('Hatchling.exe');
   });
 
+  it.runIf(process.platform === 'linux')('decodes MONITORINFO the way GetMonitorInfoW fills it', () => {
+    const libc = koffi.load('libc.so.6');
+    const memcpy = libc.func('void *memcpy(_Inout_ HatchMonitorInfo *dst, const uint8_t *src, size_t n)');
+    const raw = Buffer.alloc(40);
+    [40, 0, 0, 1920, 1080, 0, 0, 1920, 1032, 1].forEach((v, i) => raw.writeInt32LE(v, i * 4));
+    // Same shape desktop.ts passes in: cbSize plus empty nested rects.
+    const mi: Record<string, unknown> = { cbSize: 40, rcMonitor: {}, rcWork: {}, dwFlags: 0 };
+    memcpy(mi, raw, 40);
+    expect(mi.rcMonitor).toEqual({ left: 0, top: 0, right: 1920, bottom: 1080 });
+    expect(mi.rcWork).toEqual({ left: 0, top: 0, right: 1920, bottom: 1032 });
+  });
+
   it.runIf(process.platform === 'linux')('fills byte buffers passed to _Out_ uint8_t* parameters', () => {
     const libc = koffi.load('libc.so.6');
     const gethostname = libc.func('int gethostname(_Out_ uint8_t *name, size_t len)');
