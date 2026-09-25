@@ -229,15 +229,20 @@ test.describe.serial('Knobs app', () => {
   });
 
   test('can hide numbers in code', async () => {
+    const settingsBtn = win.getByRole('button', { name: 'Knob settings' });
+    const item = win.getByRole('menuitem', { name: 'Show numbers in code' });
     await expect(win.locator('.group-head', { hasText: 'Numbers in code' })).toHaveCount(0);
-    await win.locator('.panel-head .menu button').click();
-    await win.getByRole('menuitem', { name: 'Show numbers in code' }).click();
+    await settingsBtn.click();
+    await item.click();
     await expect(win.locator('.menu-pop')).toHaveCount(0);
-    await win.locator('.panel-head .menu button').click();
-    await expect(win.getByRole('menuitem', { name: 'Show numbers in code' }).locator('.check.on')).toHaveCount(0);
+    await settingsBtn.click();
+    await expect(item.locator('.check.on')).toHaveCount(0);
+    // Escape right after opening must close the menu (listeners attach synchronously)
     await win.keyboard.press('Escape');
-    await win.locator('.panel-head .menu button').click();
-    await win.getByRole('menuitem', { name: 'Show numbers in code' }).click();
+    await expect(win.locator('.menu-pop')).toHaveCount(0);
+    await settingsBtn.click();
+    await item.click();
+    await expect(win.locator('.menu-pop')).toHaveCount(0);
   });
 
   test('pasting HTML creates a new game', async () => {

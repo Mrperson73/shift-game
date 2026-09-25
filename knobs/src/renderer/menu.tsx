@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './ui';
 
 export interface MenuItem {
@@ -15,7 +15,9 @@ export interface MenuItem {
 export function Menu(props: { icon?: string; label?: ComponentChildren; title: string; items: MenuItem[]; onSelect: (v: string) => void; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  // Layout effect: listeners must exist as soon as the popover is on screen, or an Escape
+  // pressed in the first frame is lost (plain effects run a frame later).
+  useLayoutEffect(() => {
     if (!open) return;
     const close = (e: Event) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
