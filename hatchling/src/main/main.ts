@@ -5,7 +5,7 @@ import { BUILT_IN, type SpeciesDef } from '../pet/species';
 import type { WorldUpdate } from '../shared/api';
 import { resolveTheme } from '../shared/themes';
 import { type Activity, type Command, type ModProblem, newPet, type OverlayInit, type PanelInit, type Settings, TRICKS } from '../shared/types';
-import { type Desktop, openDesktop } from './desktop';
+import { type Desktop, NO_DESKTOP, openDesktop } from './desktop';
 import { detectGame, gamePids } from './games';
 import { computeWorld, type WinRect } from './geometry';
 import { allSpecies, ensureModsFolder } from './mods';
@@ -38,7 +38,7 @@ const MODS_DIR = process.env.HATCHLING_MODS_DIR || (SMOKE ? path.join(smokeDir, 
 const LOGIN_NAME = 'Hatchling';
 
 const store = new Store(path.join(USER, 'hatchling.json'));
-let desktop: Desktop = { available: false, error: null, windows: () => [], foreground: () => null, busy: () => false, coveredAbove: () => false, processes: () => new Map() };
+let desktop: Desktop = NO_DESKTOP;
 let species: SpeciesDef[] = BUILT_IN;
 let problems: ModProblem[] = [];
 let overlay: BrowserWindow | null = null;
@@ -695,9 +695,11 @@ function finishSmoke(report: Record<string, unknown>) {
     const procs = desktop.processes();
     const self = procs.get(process.pid) ?? '';
     checks.push(['Windows integration loaded', desktop.available], ['sees its own process', self.endsWith('.exe')]);
+    checks.push(['reads program paths', desktop.processPath(process.pid).toLowerCase().endsWith('\\' + self)]);
     try {
       desktop.windows(new Set());
       desktop.foreground(new Set());
+      desktop.front(new Set());
       desktop.busy();
       desktop.coveredAbove('0');
       checks.push(['reads windows', true]);

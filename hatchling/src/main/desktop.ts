@@ -1,6 +1,7 @@
 // Reads the Windows desktop through a few read-only Win32 calls (via the koffi FFI):
 // top-level window rectangles in z-order, whether the foreground app is full screen, and the names
-// of running programs (for game reactions). It never touches other programs' memory or input.
+// and exe paths of running programs and the title of the window in front (for game and video
+// reactions). It never touches other programs' memory or input, and titles are never logged or saved.
 // On other platforms (and if anything fails to load) it reports nothing, and the pet just uses
 // the taskbar.
 
@@ -23,6 +24,19 @@ export interface Foreground {
   monitor: { left: number; top: number; right: number; bottom: number };
 }
 
+/** The window you're using, for game and video reactions. */
+export interface FrontWindow {
+  hwnd: string;
+  /** Its process (for a Store app, the app inside the frame window rather than the frame host). */
+  pid: number;
+  /** How much of its monitor it covers, 0..1. */
+  cover: number;
+  /** Covers its whole monitor with no title bar and isn't just maximized: a full-screen game or video. */
+  fullscreen: boolean;
+  /** The desktop, taskbar or another part of the shell, a minimized window or a click-through overlay. */
+  shell: boolean;
+}
+
 export interface Desktop {
   available: boolean;
   error: string | null;
@@ -32,11 +46,18 @@ export interface Desktop {
   busy(): boolean;
   /** Whether a visible always-on-top window sits above `hwnd` (so it covers the pet). */
   coveredAbove(hwnd: string): boolean;
-  /** pid -> lower-case exe name. */
-  processes(): Map<number, string>;
+  /** pid -> lower-case exe name. Fills `parents` (pid -> parent pid) when given. */
+  processes(parents?: Map<number, number>): Map<number, string>;
+  /** The window in front, cheaply: no window list, no title. */
+  front(exclude: Set<string>): FrontWindow | null;
+  /** A window's title ('' when it has none). */
+  title(hwnd: string): string;
+  /** Full path of a program's exe, or '' when Windows won't say (system and protected processes). */
+  processPath(pid: number): string;
 }
 
-const NONE: Desktop = {
+/** A desktop that sees nothing (other platforms, or the native module didn't load). */
+export const NO_DESKTOP: Desktop = {
   available: false,
   error: null,
   windows: () => [],
@@ -44,6 +65,9 @@ const NONE: Desktop = {
   busy: () => false,
   coveredAbove: () => false,
   processes: () => new Map(),
+  front: () => null,
+  title: () => '',
+  processPath: () => '',
 };
 
 // Windows that are part of the shell or are not real app windows.
@@ -85,6 +109,8 @@ const GW_HWNDNEXT = 2;
 const GWL_STYLE = -16;
 const GWL_EXSTYLE = -20;
 const WS_CHILD = 0x40000000;
+const WS_MAXIMIZE = 0x01000000;
+const WS_CAPTION = 0x00c00000;
 const WS_EX_TOPMOST = 0x8;
 const WS_EX_TOOLWINDOW = 0x80;
 const WS_EX_APPWINDOW = 0x40000;
@@ -96,6 +122,10 @@ const DWMWA_EXTENDED_FRAME_BOUNDS = 9;
 const DWMWA_CLOAKED = 14;
 const MONITOR_DEFAULTTONEAREST = 2;
 const TH32CS_SNAPPROCESS = 2;
+/** Enough to ask a process for its exe path, and nothing else (no memory access). */
+const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+/** Store apps: the frame window belongs to ApplicationFrameHost.exe, this child to the app itself. */
+const STORE_APP_CLASS = 'Windows.UI.Core.CoreWindow';
 
 /** Win32 prototypes, kept together so a unit test can check they parse. */
 export const PROTOTYPES = {
@@ -118,6 +148,9 @@ export const PROTOTYPES = {
   Process32FirstW: 'int __stdcall Process32FirstW(intptr_t hSnapshot, _Inout_ HatchProcessEntry *lppe)',
   Process32NextW: 'int __stdcall Process32NextW(intptr_t hSnapshot, _Inout_ HatchProcessEntry *lppe)',
   CloseHandle: 'int __stdcall CloseHandle(intptr_t hObject)',
+  OpenProcess: 'intptr_t __stdcall OpenProcess(uint32_t dwDesiredAccess, int bInheritHandle, uint32_t dwProcessId)',
+  QueryFullProcessImageNameW: 'int __stdcall QueryFullProcessImageNameW(intptr_t hProcess, uint32_t dwFlags, _Out_ uint8_t *lpExeName, _Inout_ uint32_t *lpdwSize)',
+  FindWindowExW: 'intptr_t __stdcall FindWindowExW(intptr_t hWndParent, intptr_t hWndChildAfter, const char16_t *lpszClass, const char16_t *lpszWindow)',
 };
 
 type Koffi = typeof import('koffi');
@@ -149,7 +182,7 @@ interface Rect {
 }
 
 export function openDesktop(): Desktop {
-  if (process.platform !== 'win32') return NONE;
+  if (process.platform !== 'win32') return NO_DESKTOP;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const koffi = require('koffi') as Koffi;
@@ -179,10 +212,14 @@ export function openDesktop(): Desktop {
     const Process32FirstW = kernel32.func(P.Process32FirstW);
     const Process32NextW = kernel32.func(P.Process32NextW);
     const CloseHandle = kernel32.func(P.CloseHandle);
+    const OpenProcess = kernel32.func(P.OpenProcess);
+    const QueryFullProcessImageNameW = kernel32.func(P.QueryFullProcessImageNameW);
+    const FindWindowExW = user32.func(P.FindWindowExW);
     const entrySize = koffi.sizeof(ENTRY);
     const monitorInfoSize = koffi.sizeof(MONITORINFO);
 
     const buf = Buffer.alloc(1024);
+    const pathBuf = Buffer.alloc(2048);
     const text = (fn: (h: number, b: Buffer, n: number) => number, h: number) => {
       const n = fn(h, buf, 511);
       return n > 0 ? buf.toString('utf16le', 0, n * 2) : '';
@@ -283,8 +320,9 @@ export function openDesktop(): Desktop {
         // 2 = full-screen app, 3 = Direct3D full-screen, 4 = presentation mode.
         return s[0] === 2 || s[0] === 3 || s[0] === 4;
       },
-      processes() {
+      processes(parents) {
         const out = new Map<number, string>();
+        parents?.clear();
         const snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if (!snap || snap === -1) return out;
         try {
@@ -292,6 +330,7 @@ export function openDesktop(): Desktop {
           let ok = Process32FirstW(snap, e);
           for (let guard = 0; ok && guard < 10000; guard++) {
             out.set(e.th32ProcessID as number, String(e.szExeFile).toLowerCase());
+            parents?.set(e.th32ProcessID as number, e.th32ParentProcessID as number);
             e.dwSize = entrySize;
             ok = Process32NextW(snap, e);
           }
@@ -300,8 +339,45 @@ export function openDesktop(): Desktop {
         }
         return out;
       },
+      front(exclude) {
+        const h = GetForegroundWindow();
+        if (!h || exclude.has(String(h))) return null;
+        const cls = className(h);
+        const style = Number(GetWindowLongPtrW(h, GWL_STYLE));
+        const ex = Number(GetWindowLongPtrW(h, GWL_EXSTYLE));
+        // A full-screen Store app's own window can be in front; the Start menu's has the same class,
+        // so that one is told apart by its process instead.
+        const shell = (SKIP_CLASSES.has(cls) && cls !== STORE_APP_CLASS) || (ex & WS_EX_TRANSPARENT) !== 0 || !!IsIconic(h);
+        const inner = cls === 'ApplicationFrameWindow' ? FindWindowExW(h, 0, STORE_APP_CLASS, null) : 0;
+        const pid = [0];
+        GetWindowThreadProcessId(inner || h, pid);
+        const r = rectOf(h);
+        const m = monitorOf(h);
+        let cover = 0;
+        if (r && m && m.right > m.left && m.bottom > m.top) {
+          const w = Math.min(r.right, m.right) - Math.max(r.left, m.left);
+          const hgt = Math.min(r.bottom, m.bottom) - Math.max(r.top, m.top);
+          if (w > 0 && hgt > 0) cover = (w * hgt) / ((m.right - m.left) * (m.bottom - m.top));
+        }
+        // A maximized window also fills its monitor when the taskbar auto-hides; it keeps its title bar.
+        const fullscreen = !shell && cover >= 0.999 && !(style & WS_MAXIMIZE) && (style & WS_CAPTION) !== WS_CAPTION;
+        return { hwnd: String(h), pid: pid[0], cover, fullscreen, shell };
+      },
+      title(hwnd) {
+        return text(GetWindowTextW, Number(hwnd));
+      },
+      processPath(pid) {
+        const h = pid ? OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) : 0;
+        if (!h) return '';
+        try {
+          const size = [pathBuf.length / 2];
+          return QueryFullProcessImageNameW(h, 0, pathBuf, size) ? pathBuf.toString('utf16le', 0, size[0] * 2) : '';
+        } finally {
+          CloseHandle(h);
+        }
+      },
     };
   } catch (err) {
-    return { ...NONE, error: (err as Error).message };
+    return { ...NO_DESKTOP, error: (err as Error).message };
   }
 }
