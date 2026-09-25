@@ -157,12 +157,12 @@ test.describe.serial('Hatchling', () => {
   test('custom species from the mods folder show up as eggs', async () => {
     const dir = path.join(userData, 'species');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'spino.json'), JSON.stringify({ id: 'spino', name: 'Spino', base: 'rex', features: { sail: true }, proportions: { headLen: 1.2 } }));
+    fs.writeFileSync(path.join(dir, 'allo.json'), JSON.stringify({ id: 'allo', name: 'Allo', base: 'rex', features: { sail: true }, proportions: { headLen: 1.2 } }));
     fs.writeFileSync(path.join(dir, 'bad.json'), '{"id": "x"}');
     await app.evaluate(() => (global as unknown as { __hatchling: { openPanel: (v: string) => void } }).__hatchling.openPanel('settings'));
     const panel = await windowBy('panel');
     await panel.getByRole('button', { name: 'Open species folder' }).click();
-    await expect(panel.getByText('Loaded: Spino')).toBeVisible({ timeout: 5000 });
+    await expect(panel.getByText('Loaded: Allo')).toBeVisible({ timeout: 5000 });
     await expect(panel.getByText(/bad\.json/)).toBeVisible();
   });
 
