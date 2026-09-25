@@ -43,8 +43,8 @@ right away; new species show up as eggs when you hatch a new pet.
 Fields (all optional except id and name):
   id           short id, a-z 0-9 and - (not one of the built-in ids)
   name         shown on the egg
-  base         rex | raptor | pachy | trike | stego | anky | spino | carno | dilo | parasaur | galli
-               (trike, stego and anky walk on four legs)
+  base         rex | raptor | pachy | trike | stego | anky | spino | carno | dilo | parasaur | galli |
+               brachio (trike, stego, anky and brachio walk on four legs)
   latin        its scientific name
   blurb        one line about it
   fact         a fun fact for the egg chooser
@@ -54,7 +54,7 @@ Fields (all optional except id and name):
   proportions  size multipliers, e.g. { "headLen": 1.2, "tailLen": 0.8, "armUpper": 0.5 }
   features     true/false: teeth, brow, feathers, crest, dome, horns, sail, spikes, sickleClaw,
                beak, frill, browHorns, noseHorn, plates, thagomizer, armor, club, tubeCrest,
-               twinCrests, crocSnout, duckBill, finTail
+               twinCrests, crocSnout, duckBill, finTail, nasalArch
   personality  0..1: speed, jump, curiosity, stamina, playfulness, vocal
   variants     colours: [{ "name": "Red", "body": "#a83a2c", "belly": "#f0d0b0",
                             "pattern": "#5a1d16", "accent": "#e8b04a", "iris": "#f3d35a",

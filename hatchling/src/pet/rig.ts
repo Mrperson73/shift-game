@@ -103,6 +103,8 @@ export interface Solved {
 }
 
 const TAIL_SEGS = 9;
+/** The neck is a chain of this many segments, so long necks bend smoothly. */
+export const NECK_SEGS = 4;
 const TAU = Math.PI * 2;
 
 /** How a leg chain is built: bone lengths, width and which way the middle joint bends. */
@@ -196,7 +198,11 @@ export class Rig {
   /** Approximate standing height in rig units (before size). */
   get height() {
     const p = this.p;
-    if (this.quad) return Math.max(p.hipHeight + p.hipR * 1.15, p.shoulderHeight + p.chestR + p.headH * 0.6);
+    if (this.quad) {
+      const pitch = Math.asin(clamp((p.shoulderHeight - p.hipHeight) / p.bodyLen, -0.9, 0.9));
+      const neckTop = p.shoulderHeight + p.chestR * 0.3 + p.neckLen * Math.max(0, Math.sin(pitch + p.neckAngle)) * 0.9 + p.headH * 0.8;
+      return Math.max(p.hipHeight + p.hipR * 1.15, p.shoulderHeight + p.chestR + p.headH * 0.6, neckTop);
+    }
     return p.hipHeight + p.hipR + p.neckLen * 0.6 + p.headH;
   }
 
@@ -248,6 +254,10 @@ export class Rig {
     const r = this.runS;
     const p = this.p;
     let stride = (p.thigh + p.shin) * (0.95 + 0.55 * r);
+    // Straight legs can't reach far: keep each step within what the hind legs can span.
+    const hipDrop = p.hipHeight - p.hipR * 0.28 - p.heel;
+    const hindReach = 0.97 * (p.thigh + p.shin);
+    stride = Math.min(stride, 2 * Math.sqrt(Math.max(1, hindReach * hindReach - hipDrop * hipDrop)) * (1 + 0.25 * r));
     if (this.quad) {
       // The short front legs limit how far each step can reach.
       const drop = p.shoulderHeight - p.chestR * 0.35 - p.fMeta * 0.85;
@@ -323,8 +333,17 @@ export class Rig {
     const headDir = neutralHead + 0.12; // the skull points roughly along neutralHead
     const lookDelta = clamp(wrapAngle(toLook - headDir), -0.55, 0.65) * this.lookAmount * (1 - 0.7 * po.hipDrop * (this.eyes === 'closed' ? 1 : 0));
     const neckDir = neutralNeck + lookDelta * 0.4 + shake(33, 0.05) + dance * Math.sin(t * 7 + 0.3) * 0.08;
-    const n1 = add(neckBase, dir(neckDir, p.neckLen * 0.5));
-    const n2 = add(n1, dir(neckDir - 0.3, p.neckLen * 0.5));
+    // An S-curve: a little steeper at the base, bending forward towards the head.
+    const neck: V[] = [neckBase];
+    const seg = p.neckLen / NECK_SEGS;
+    for (let k = 0; k < NECK_SEGS; k++) {
+      const q = add(neck[k], dir(neckDir + p.neckBend * (0.33 - k / (NECK_SEGS - 1)), seg));
+      // A long neck rests on the ground instead of going through it.
+      const r = p.neckR * (1.1 - p.neckTaper * ((k + 1) / NECK_SEGS)) * 0.8;
+      if (q.y < r) q.y = r;
+      neck.push(q);
+    }
+    const n2 = neck[NECK_SEGS];
     const headA = neutralHead + lookDelta * 0.7 + shake(45, 0.06) + Math.sin(this.phase * TAU * 2) * 0.03 * gw + po.tilt + dance * Math.sin(t * 7 + 0.6) * 0.16 + shakeOff * Math.sin(t * 29 + 1.2) * 0.4;
     let headO = at(n2, headA, { x: -p.headLen * 0.1, y: -p.headH * 0.3 });
     const jawA = -clamp(po.jaw, 0, 1.2) * 0.62;
@@ -485,7 +504,7 @@ export class Rig {
       hip,
       chest,
       belly,
-      neck: [neckBase, n1, n2],
+      neck,
       headO,
       headA,
       jawA,
@@ -515,7 +534,7 @@ export class Rig {
       { p: s.hip, r: s.hipR },
       { p: s.chest, r: s.chestR },
       { p: s.belly, r: s.bellyR },
-      { p: s.neck[1], r: s.neckR },
+      ...s.neck.slice(1).map((q) => ({ p: q, r: s.neckR * 0.95 })),
       { p: at(s.headO, s.headA, { x: p.headLen * 0.35, y: p.headH * 0.45 }), r: p.headH * 0.6 },
       { p: at(s.headO, s.headA, { x: p.headLen * 0.75, y: p.snoutH * 0.4 }), r: p.snoutH * 0.6 },
     ];

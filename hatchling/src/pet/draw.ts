@@ -2,9 +2,9 @@
 // one clean outline around the whole silhouette, lighter belly, species pattern, soft shading, big eyes.
 
 import type { CustomColors } from '../shared/types';
-import { at, clamp, dir, lerp, type V } from './math';
-import type { LegOut, Rig } from './rig';
-import type { Features, SpeciesDef, Variant } from './species';
+import { at, clamp, dir, lerp, lerpV, type V } from './math';
+import type { ArmOut, LegOut, Rig } from './rig';
+import type { BodyParams, Features, SpeciesDef, Variant } from './species';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -96,10 +96,6 @@ function capsule(path: Path2D, a: V, ra: number, b: V, rb: number) {
   path.closePath();
 }
 
-function circle(path: Path2D, c: V, r: number) {
-  path.moveTo(c.x + r, c.y);
-  path.arc(c.x, c.y, r, 0, Math.PI * 2);
-}
 
 /** Smooth closed curve through points (Catmull-Rom converted to Béziers). */
 function smoothClosed(path: Path2D, pts: V[], tension = 1) {
@@ -129,30 +125,89 @@ function horn(path: Path2D, base: V, ang: number, len: number, w: number, curve 
   path.closePath();
 }
 
-/** Points along the back, from near the tail tip forward to the neck, with the local "up" direction. */
-function spinePoints(r: Rig, tailFrom = r.s.tail.length - 2, neck = false): { p: V; up: number; r: number; k: number }[] {
+/**
+ * A cross-section of the body: a point on the spine, the direction towards the head, and how far
+ * the back (`up`) and the belly (`dn`) reach from it. `k` says where it is: -9..-1 along the tail
+ * (tip first), 0..1 from the hips to the chest, above 1 along the neck.
+ */
+export interface Station {
+  p: V;
+  a: number;
+  up: number;
+  dn: number;
+  k: number;
+}
+
+/** Cross-sections from the tail tip to the head. The outline, belly and patterns all follow them. */
+function stations(r: Rig): Station[] {
   const s = r.s;
-  const out: { p: V; up: number; r: number; k: number }[] = [];
-  for (let i = tailFrom; i >= 1; i--) {
-    const a = Math.atan2(s.tail[i - 1].p.y - s.tail[i].p.y, s.tail[i - 1].p.x - s.tail[i].p.x);
-    out.push({ p: s.tail[i].p, up: a + Math.PI / 2, r: s.tail[i].r, k: -i });
+  const p = r.p;
+  const out: Station[] = [];
+  const n = s.tail.length;
+  for (let i = n - 1; i >= 1; i--) {
+    const q = s.tail[i];
+    const prev = s.tail[i - 1];
+    const f = i / (n - 1);
+    // The tail is a little deeper underneath near its base (the big tail-leg muscle).
+    out.push({ p: q.p, a: Math.atan2(prev.p.y - q.p.y, prev.p.x - q.p.x), up: q.r, dn: q.r * (1 + 0.3 * (1 - f)), k: -i });
   }
-  for (let t = 0; t <= 1.001; t += 0.25) out.push({ p: { x: lerp(s.hip.x, s.chest.x, t), y: lerp(s.hip.y, s.chest.y, t) }, up: s.pitch + Math.PI / 2, r: lerp(s.hipR, s.chestR, t), k: t });
-  if (neck) {
-    for (let i = 1; i < s.neck.length; i++) {
-      const a = Math.atan2(s.neck[i].y - s.neck[i - 1].y, s.neck[i].x - s.neck[i - 1].x);
-      out.push({ p: s.neck[i], up: a + Math.PI / 2, r: s.neckR, k: 1 + i });
-    }
+  const upN = dir(s.pitch + Math.PI / 2);
+  for (const t of [0, 0.3, 0.6, 0.85, 1]) {
+    const c = lerpV(s.hip, s.chest, t);
+    const R = lerp(s.hipR, s.chestR, t);
+    // How far the belly hangs below the body line here.
+    const bellyBottom = (c.x - s.belly.x) * upN.x + (c.y - s.belly.y) * upN.y + s.bellyR;
+    const w = clamp(1 - Math.abs(t - 0.45) / 0.55, 0, 1);
+    out.push({ p: c, a: s.pitch, up: R * (t === 0 ? 0.97 : t === 1 ? 0.78 : 0.9), dn: Math.max(R * 0.95, lerp(R * 0.95, bellyBottom, w)), k: t });
+  }
+  // The neck (its base is hidden in the shoulders; its end in the head).
+  const K = s.neck.length - 1;
+  for (let j = 1; j <= K; j++) {
+    const q = s.neck[j];
+    const nx = s.neck[Math.min(K, j + 1)];
+    const pv = s.neck[j - 1];
+    const rr = p.neckR * (1.1 - p.neckTaper * (j / K));
+    out.push({ p: q, a: Math.atan2(nx.y - pv.y, nx.x - pv.x), up: rr * 0.92, dn: rr * 1.08, k: 1 + j / K });
   }
   return out;
 }
 
+/** A point on the back at a station (plus `off` further out). */
+const dorsalAt = (q: Station, off = 0) => add2(q.p, dir(q.a + Math.PI / 2, q.up + off));
+/** A point on the belly side at a station (plus `off` further out). */
+const ventralAt = (q: Station, off = 0) => add2(q.p, dir(q.a - Math.PI / 2, q.dn + off));
+
+/** The whole body outline (tail, torso and neck) as one smooth shape. */
+function silhouette(r: Rig, st: Station[]): Path2D {
+  const t = r.s.tail;
+  const tip = t[t.length - 1];
+  const tipOut = add2(tip.p, dir(Math.atan2(tip.p.y - t[t.length - 2].p.y, tip.p.x - t[t.length - 2].p.x), tip.r * 1.8));
+  const last = st[st.length - 1];
+  const end = add2(last.p, dir(last.a, (last.up + last.dn) * 0.35));
+  const pts = [tipOut, ...st.map((q) => dorsalAt(q)), end, ...st.map((q) => ventralAt(q)).reverse()];
+  const path = new Path2D();
+  smoothClosed(path, pts, 0.9);
+  return path;
+}
+
+/** Adds a smooth limb segment from a to b: tapered, with muscle bulges in front and behind. */
+function limb(path: Path2D, a: V, b: V, wa: number, wb: number, front = 0, back = 0, at = 0.4) {
+  const ang = Math.atan2(b.y - a.y, b.x - a.x);
+  const n = dir(ang + Math.PI / 2);
+  const m = lerpV(a, b, at);
+  const wm = lerp(wa, wb, at);
+  const off = (q: V, k: number): V => ({ x: q.x + n.x * k, y: q.y + n.y * k });
+  const pts = [off(a, wa), off(m, wm + front), off(b, wb), add2(b, dir(ang, wb * 0.75)), off(b, -wb), off(m, -(wm + back)), off(a, -wa), add2(a, dir(ang, -wa * 0.7))];
+  smoothClosed(path, pts, 1);
+}
+
 // ---------------- head geometry (head coordinates: origin = jaw joint, x toward snout, y up) ----------------
 
-type HeadKind = 'default' | 'dome' | 'croc' | 'duck' | 'cera';
+type HeadKind = 'default' | 'dome' | 'croc' | 'duck' | 'cera' | 'sauro';
 
 function headKind(f: Features): HeadKind {
   if (f.dome) return 'dome';
+  if (f.nasalArch) return 'sauro';
   if (f.crocSnout) return 'croc';
   if (f.duckBill) return 'duck';
   if (f.frill) return 'cera';
@@ -207,6 +262,23 @@ function skullPoints(r: Rig, f: Features): V[] {
         { x: (0.98 - round * 0.06) * L, y: -0.02 * H },
         { x: 0.5 * L, y: -0.02 * H },
       ];
+    case 'sauro': {
+      // Brachiosaurus: a small head with a tall arch over the nose.
+      const arch = 0.45 + 0.55 * (1 - b);
+      return [
+        { x: 0, y: 0 },
+        { x: (-0.1 - round * 0.05) * L, y: 0.5 * H },
+        { x: (0.04 - round * 0.04) * L, y: (0.92 + round * 0.1) * H },
+        { x: (0.26 - round * 0.06) * L, y: (1.0 + round * 0.1) * H },
+        { x: 0.42 * L, y: (1 + 0.3 * arch) * H },
+        { x: 0.58 * L, y: (1 + 0.34 * arch) * H },
+        { x: 0.73 * L, y: (0.95 + 0.1 * arch) * H },
+        { x: (0.92 - round * 0.06) * L, y: S * (0.95 + round * 0.2) },
+        { x: (1.03 - round * 0.05) * L, y: S * 0.45 },
+        { x: (0.97 - round * 0.05) * L, y: -0.02 * H },
+        { x: 0.5 * L, y: -0.02 * H },
+      ];
+    }
     case 'cera':
       // A deep skull ending in a parrot-like hooked beak.
       return [
@@ -317,7 +389,7 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     ctx.save();
     ctx.fillStyle = `rgba(20, 16, 30, ${0.16 * k})`;
     ctx.beginPath();
-    ctx.ellipse(r.quad ? (p.bodyLen * 0.45 * sc * r.face) : 0, (opts.airborne ?? 0) + 1, w * k, Math.max(2, 3.2 * sc * 0.9) * k, 0, 0, Math.PI * 2);
+    ctx.ellipse(r.quad ? p.bodyLen * 0.45 * sc * r.face : 0, (opts.airborne ?? 0) + 1, w * k, Math.max(2, 3.2 * sc * 0.9) * k, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -342,125 +414,164 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     fill(path, color);
   };
 
+  const st = stations(r);
+  const body = silhouette(r, st);
+
   // ---- limbs ----
   const sharp = !!f.teeth;
-  const legPath = (l: LegOut) => {
+  /** A hind leg: muscular thigh, slim shin with a calf, long foot and toes (or a round foot for big four-legged ones). */
+  const hindLeg = (l: LegOut) => {
     const w = p.legW;
-    const path = new Path2D();
-    capsule(path, l.hip, w, l.knee, w * 0.56);
-    capsule(path, l.knee, w * 0.5, l.heel, w * 0.3);
-    capsule(path, l.heel, w * 0.32, l.ball, w * 0.28);
-    capsule(path, l.ball, w * 0.3, l.toe, w * 0.16);
-    const t2 = at(l.ball, Math.atan2(l.toe.y - l.ball.y, l.toe.x - l.ball.x) + 0.35, { x: p.toe * 0.8, y: 0 });
-    capsule(path, l.ball, w * 0.26, t2, w * 0.14);
-    return { path, t2 };
-  };
-  const frontPath = (l: LegOut) => {
-    const w = p.fLegW;
-    const path = new Path2D();
-    capsule(path, l.hip, w, l.knee, w * 0.66);
-    capsule(path, l.knee, w * 0.62, l.heel, w * 0.46);
-    capsule(path, l.heel, w * 0.46, l.ball, w * 0.44);
-    capsule(path, l.ball, w * 0.44, l.toe, w * 0.3);
-    return path;
-  };
-  const claws = (l: LegOut, t2: V, w: number) => {
-    const tips = [l.toe, t2];
-    if (sharp) {
-      ctx.fillStyle = pal.outline;
-      for (const tip of tips) {
-        const a = Math.atan2(tip.y - l.ball.y, tip.x - l.ball.x);
-        const c = new Path2D();
-        c.moveTo(tip.x + Math.cos(a + 1.6) * w * 0.14, tip.y + Math.sin(a + 1.6) * w * 0.14);
-        c.lineTo(tip.x + Math.cos(a) * w * 0.34, tip.y + Math.sin(a) * w * 0.34 - w * 0.06);
-        c.lineTo(tip.x + Math.cos(a - 1.6) * w * 0.14, tip.y + Math.sin(a - 1.6) * w * 0.14);
-        ctx.fill(c);
-      }
-    } else nails(tips, l.ball, w);
-    if (f.sickleClaw) {
-      ctx.fillStyle = pal.outline;
-      const base = { x: l.ball.x - w * 0.05, y: l.ball.y + w * 0.3 };
-      const c = new Path2D();
-      c.moveTo(base.x - w * 0.12, base.y);
-      c.quadraticCurveTo(base.x + w * 0.1, base.y + w * 0.62, base.x + w * 0.48, base.y + w * 0.38);
-      c.quadraticCurveTo(base.x + w * 0.12, base.y + w * 0.36, base.x + w * 0.12, base.y);
-      ctx.fill(c);
+    const thigh = new Path2D();
+    const rest = new Path2D();
+    const toes: V[] = [];
+    if (r.quad) {
+      limb(thigh, l.hip, l.knee, w * 1.12, w * 0.74, w * 0.1, w * 0.22, 0.4);
+      limb(rest, l.knee, l.heel, w * 0.72, w * 0.58, 0, w * 0.12, 0.3);
+      limb(rest, l.heel, l.ball, w * 0.58, w * 0.54);
+      limb(rest, l.ball, l.toe, w * 0.54, w * 0.36);
+      toes.push(l.toe);
+    } else {
+      // The thigh starts inside the hips, so its top melts into the body.
+      const top = add2(l.hip, dir(Math.atan2(l.hip.y - l.knee.y, l.hip.x - l.knee.x), w * 0.45));
+      limb(thigh, top, l.knee, w * 0.9, w * 0.48, w * 0.22, w * 0.34, 0.42);
+      limb(rest, l.knee, l.heel, w * 0.5, w * 0.27, 0, w * 0.2, 0.28);
+      limb(rest, l.heel, l.ball, w * 0.27, w * 0.23);
+      const t2 = at(l.ball, Math.atan2(l.toe.y - l.ball.y, l.toe.x - l.ball.x) + 0.35, { x: p.toe * 0.8, y: 0 });
+      limb(rest, l.ball, l.toe, w * 0.23, w * 0.1);
+      limb(rest, l.ball, t2, w * 0.2, w * 0.09);
+      // The small inner toe (dewclaw) at the back of the foot.
+      const dw = lerpV(l.heel, l.ball, 0.55);
+      limb(rest, dw, add2(dw, dir(-2.3, p.toe * 0.45)), w * 0.12, w * 0.06);
+      toes.push(l.toe, t2);
     }
+    const all = new Path2D();
+    all.addPath(thigh);
+    all.addPath(rest);
+    return { thigh, all, toes };
   };
-  /** Blunt, rounded nails (plant-eaters). */
-  const nails = (tips: V[], from: V, w: number) => {
+  const frontLeg = (l: LegOut) => {
+    const w = p.fLegW;
+    const upper = new Path2D();
+    const all = new Path2D();
+    limb(upper, l.hip, l.knee, w * 1.05, w * 0.7, w * 0.15, w * 0.1, 0.35);
+    all.addPath(upper);
+    limb(all, l.knee, l.heel, w * 0.68, w * 0.52, w * 0.1, 0, 0.3);
+    limb(all, l.heel, l.ball, w * 0.52, w * 0.5);
+    limb(all, l.ball, l.toe, w * 0.5, w * 0.32);
+    return { thigh: upper, all, toes: [l.toe] };
+  };
+  const arm = (a: ArmOut) => {
+    const w = p.armW;
+    const upper = new Path2D();
+    const all = new Path2D();
+    limb(upper, a.shoulder, a.elbow, w * 1.05, w * 0.72, w * 0.18, w * 0.1, 0.35);
+    all.addPath(upper);
+    limb(all, a.elbow, a.hand, w * 0.72, w * 0.5, w * 0.08, 0, 0.35);
+    const ang = Math.atan2(a.hand.y - a.elbow.y, a.hand.x - a.elbow.x);
+    const f1 = add2(a.hand, dir(ang + 0.5, w * 1.3));
+    const f2 = add2(a.hand, dir(ang - 0.3, w * 1.4));
+    limb(all, a.hand, f1, w * 0.42, w * 0.16);
+    limb(all, a.hand, f2, w * 0.42, w * 0.16);
+    return { thigh: upper, all, toes: [f1, f2] };
+  };
+  const claws = (tips: V[], from: V, w: number) => {
     for (const tip of tips) {
       const a = Math.atan2(tip.y - from.y, tip.x - from.x);
       const c = new Path2D();
-      c.ellipse(tip.x + Math.cos(a) * w * 0.05, tip.y + Math.sin(a) * w * 0.05, w * 0.2, w * 0.14, a, 0, Math.PI * 2);
-      ctx.fillStyle = pal.horn;
-      ctx.strokeStyle = pal.outline;
-      ctx.lineWidth = o * 0.9;
-      ctx.stroke(c);
-      ctx.fill(c);
+      if (sharp) {
+        c.moveTo(tip.x + Math.cos(a + 1.6) * w * 0.12, tip.y + Math.sin(a + 1.6) * w * 0.12);
+        c.quadraticCurveTo(tip.x + Math.cos(a) * w * 0.3, tip.y + Math.sin(a) * w * 0.3, tip.x + Math.cos(a - 0.5) * w * 0.34, tip.y + Math.sin(a - 0.5) * w * 0.34 - w * 0.05);
+        c.lineTo(tip.x + Math.cos(a - 1.6) * w * 0.12, tip.y + Math.sin(a - 1.6) * w * 0.12);
+        ctx.fillStyle = pal.outline;
+        ctx.fill(c);
+      } else {
+        c.ellipse(tip.x + Math.cos(a) * w * 0.05, tip.y + Math.sin(a) * w * 0.05, w * 0.2, w * 0.14, a, 0, Math.PI * 2);
+        ctx.fillStyle = pal.horn;
+        ctx.strokeStyle = pal.outline;
+        ctx.lineWidth = o * 0.9;
+        ctx.stroke(c);
+        ctx.fill(c);
+      }
     }
   };
-  const frontNails = (l: LegOut) => {
-    const w = p.fLegW;
-    const a = Math.atan2(l.toe.y - l.ball.y, l.toe.x - l.ball.x);
-    nails([add2(l.toe, dir(a + 1.2, w * 0.12)), add2(l.toe, dir(a - 0.3, w * 0.08))], l.ball, w);
+  const sickle = (l: LegOut) => {
+    if (!f.sickleClaw) return;
+    const w = p.legW;
+    const base = { x: l.ball.x - w * 0.05, y: l.ball.y + w * 0.3 };
+    const c = new Path2D();
+    c.moveTo(base.x - w * 0.12, base.y);
+    c.quadraticCurveTo(base.x + w * 0.1, base.y + w * 0.62, base.x + w * 0.48, base.y + w * 0.38);
+    c.quadraticCurveTo(base.x + w * 0.12, base.y + w * 0.36, base.x + w * 0.12, base.y);
+    ctx.fillStyle = pal.outline;
+    ctx.fill(c);
   };
-  const armPath = (a: (typeof s.arms)[number]) => {
-    const w = p.armW;
-    const path = new Path2D();
-    capsule(path, a.shoulder, w, a.elbow, w * 0.8);
-    capsule(path, a.elbow, w * 0.8, a.hand, w * 0.6);
-    const ang = Math.atan2(a.hand.y - a.elbow.y, a.hand.x - a.elbow.x);
-    capsule(path, a.hand, w * 0.5, add2(a.hand, dir(ang + 0.5, w * 1.2)), w * 0.25);
-    capsule(path, a.hand, w * 0.5, add2(a.hand, dir(ang - 0.3, w * 1.3)), w * 0.25);
-    return path;
-  };
-  const armFeathers = (a: (typeof s.arms)[number], color: string) => {
+  const armFeathers = (a: ArmOut, color: string) => {
     if (!f.feathers) return;
     const ang = Math.atan2(a.hand.y - a.elbow.y, a.hand.x - a.elbow.x);
+    const fe = new Path2D();
     for (let i = 0; i < 5; i++) {
       const base = { x: lerp(a.elbow.x, a.hand.x, i / 4), y: lerp(a.elbow.y, a.hand.y, i / 4) };
       const tip = add2(base, dir(ang - 2.1 - i * 0.08, p.armFore * (0.55 + 0.12 * (4 - Math.abs(2 - i)))));
-      const fe = new Path2D();
-      capsule(fe, base, p.armW * 0.55, tip, p.armW * 0.18);
-      part(fe, color);
+      limb(fe, base, tip, p.armW * 0.5, p.armW * 0.12);
     }
+    part(fe, color);
+  };
+  // Where a limb is in front of the body it has no outline, just a soft muscle line, so it looks
+  // like part of the animal rather than stuck on.
+  const outside = new Path2D();
+  const bb = s.bounds;
+  outside.rect(bb.x1 - 60, bb.y1 - 60, bb.x2 - bb.x1 + 120, bb.y2 - bb.y1 + 120);
+  outside.addPath(body);
+  const nearLimb = (lm: { thigh: Path2D; all: Path2D }, color: string, joint: V, w: number) => {
+    ctx.save();
+    ctx.clip(outside, 'evenodd');
+    outlineOf(lm.all);
+    ctx.restore();
+    fill(lm.all, color);
+    // The muscle line: only on the lower part, fading into the body above the joint.
+    ctx.save();
+    ctx.clip(body);
+    ctx.beginPath();
+    ctx.rect(bb.x1 - 60, bb.y1 - 60, bb.x2 - bb.x1 + 120, joint.y - w * 0.2 - (bb.y1 - 60));
+    ctx.clip();
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = pal.outline;
+    ctx.lineWidth = o * 1.1;
+    ctx.stroke(lm.thigh);
+    ctx.restore();
   };
 
   // Far limbs, behind everything.
-  const farLeg = legPath(s.legs[1]);
-  part(farLeg.path, pal.far);
-  claws(s.legs[1], farLeg.t2, p.legW);
+  const farLeg = hindLeg(s.legs[1]);
+  part(farLeg.all, pal.far);
+  claws(farLeg.toes, s.legs[1].ball, p.legW);
+  sickle(s.legs[1]);
   if (s.fronts.length) {
-    part(frontPath(s.fronts[1]), pal.far);
-    frontNails(s.fronts[1]);
+    const fl = frontLeg(s.fronts[1]);
+    part(fl.all, pal.far);
+    claws(fl.toes, s.fronts[1].ball, p.fLegW);
   }
   if (s.arms.length) {
     armFeathers(s.arms[1], darken(pal.accent, 0.2));
-    part(armPath(s.arms[1]), pal.far);
+    const fa = arm(s.arms[1]);
+    part(fa.all, pal.far);
+    claws(fa.toes, s.arms[1].hand, p.armW * 2.2);
   }
 
   // ---- features behind the body ----
-  if (f.sail) drawSail(ctx, r, pal, o);
+  if (f.sail) drawSail(ctx, pal, o, st, p, grown);
   if (f.plates) {
-    drawPlates(ctx, r, pal, o, true);
-    drawPlates(ctx, r, pal, o, false);
+    drawPlates(ctx, pal, o, st, p, grown, true);
+    drawPlates(ctx, pal, o, st, p, grown, false);
   }
   if (f.finTail) drawFin(ctx, r, pal, o);
   if (f.thagomizer) drawThagomizer(ctx, r, pal, o, true);
-  if (f.spikes) part(spikePath(r), pal.accent);
-  if (f.armor) part(armorSpikes(r), pal.horn);
+  if (f.spikes) part(spikePath(st), pal.accent);
+  if (f.armor) part(armorSpikes(st, grown), pal.horn);
   if (f.horns) part(hornPath(r), lighten(pal.accent, 0.35));
 
-  // ---- main silhouette: outline everything first, then fill, so the outline only shows outside ----
-  const tail = new Path2D();
-  for (let i = 0; i + 1 < s.tail.length; i++) capsule(tail, s.tail[i].p, s.tail[i].r, s.tail[i + 1].p, s.tail[i + 1].r);
-  const torso = new Path2D();
-  capsule(torso, s.hip, s.hipR, s.chest, s.chestR);
-  circle(torso, s.belly, s.bellyR);
-  const neck = new Path2D();
-  capsule(neck, s.neck[0], p.neckR * 1.15, s.neck[1], p.neckR);
-  capsule(neck, s.neck[1], p.neckR, s.neck[2], p.neckR * 0.9);
+  // ---- head shapes ----
   const skull = headPath(s.headO, s.headA, skullPoints(r, f));
   const jawA = s.headA + s.jawA;
   const jaw = headPath(s.headO, jawA, jawPoints(r, f));
@@ -475,9 +586,12 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     mouth.closePath();
   }
 
-  for (const path of [tail, torso, neck, skull, jaw]) outlineOf(path);
+  // ---- main silhouette: outline everything first, then fill, so the outline only shows outside ----
+  outlineOf(body);
+  outlineOf(skull);
+  outlineOf(jaw);
   if (mouth) outlineOf(mouth);
-  for (const path of [tail, torso, neck]) fill(path, pal.body);
+  fill(body, pal.body);
   if (mouth) fill(mouth, pal.mouth);
   if (open) {
     // Tongue.
@@ -489,23 +603,25 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   }
 
   // Belly, pattern and shading, clipped to the body.
-  const bodyUnion = new Path2D();
-  bodyUnion.addPath(tail);
-  bodyUnion.addPath(torso);
-  bodyUnion.addPath(neck);
   ctx.save();
-  ctx.clip(bodyUnion);
-  ctx.fillStyle = pal.belly;
-  const bellyPath = new Path2D();
-  for (let i = 1; i < s.tail.length - 3; i++) circle(bellyPath, { x: s.tail[i].p.x, y: s.tail[i].p.y - s.tail[i].r * 0.8 }, s.tail[i].r * 0.62);
-  circle(bellyPath, at(s.belly, s.pitch, { x: 0, y: -s.bellyR * 0.3 }), s.bellyR * 0.85);
-  circle(bellyPath, at(s.chest, s.pitch, { x: s.chestR * 0.2, y: -s.chestR * 0.5 }), s.chestR * 0.7);
-  circle(bellyPath, at(s.hip, s.pitch, { x: 0, y: -s.hipR * 0.62 }), s.hipR * 0.6);
-  for (const n of s.neck) circle(bellyPath, at(n, s.headA - 0.4, { x: 0.3 * p.neckR, y: -p.neckR * 0.72 }), p.neckR * 0.6);
-  ctx.fill(bellyPath);
-  pattern(ctx, r, pal, o);
-  if (f.armor) scutes(ctx, r, pal, o);
+  ctx.clip(body);
+  bellyBand(ctx, st, pal);
+  pattern(ctx, st, pal, o);
+  if (f.armor) scutes(ctx, st, pal, o);
   shade(ctx, s.bounds);
+  // A soft sheen along the back.
+  ctx.strokeStyle = lighten(pal.body, 0.35);
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = o * 1.3;
+  ctx.beginPath();
+  st.forEach((q, i) => {
+    if (q.k < -6) return;
+    const d = dorsalAt(q, -o * 2.2);
+    if (i === 0 || st[i - 1].k < -6) ctx.moveTo(d.x, d.y);
+    else ctx.lineTo(d.x, d.y);
+  });
+  ctx.stroke();
+  ctx.globalAlpha = 1;
   ctx.restore();
 
   // Head crests and frills sit behind the skull but in front of the neck.
@@ -524,31 +640,29 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   fill(jaw, pal.body);
   fill(skull, pal.body);
 
+  // Head details, clipped to the head.
+  const L = p.headLen;
+  const H = p.headH;
+  const kind = headKind(f);
   const headUnion = new Path2D();
   headUnion.addPath(skull);
   headUnion.addPath(jaw);
-
   ctx.save();
-  ctx.clip(jaw);
+  ctx.clip(headUnion);
+  // Pale throat and lower jaw.
   ctx.fillStyle = pal.belly;
-  const jb = new Path2D();
-  jb.ellipse(...xy(at(s.headO, jawA, { x: p.headLen * 0.45, y: -p.jawD * 1.0 })), p.headLen * 0.5, p.jawD * 0.62, jawA, 0, Math.PI * 2);
-  ctx.fill(jb);
-  ctx.restore();
-
+  ctx.beginPath();
+  ctx.ellipse(...xy(at(s.headO, jawA, { x: L * 0.45, y: -p.jawD * 1.0 })), L * 0.5, p.jawD * 0.62, jawA, 0, Math.PI * 2);
+  ctx.fill();
   // Beaks: a horny tip on the snout and the lower jaw.
   if (f.beak || f.duckBill) {
-    const kind = headKind(f);
     const b0 = kind === 'cera' ? 0.74 : kind === 'duck' ? 0.8 : 0.76;
-    const L = p.headLen;
-    ctx.save();
-    ctx.clip(headUnion);
     ctx.fillStyle = pal.horn;
     const bk = new Path2D();
-    const q1 = at(s.headO, s.headA, { x: (b0 + 0.06) * L, y: p.headH * 1.4 });
+    const q1 = at(s.headO, s.headA, { x: (b0 + 0.06) * L, y: H * 1.4 });
     const q2 = at(s.headO, s.headA, { x: b0 * L, y: p.snoutH * 0.4 });
     const q3 = at(s.headO, jawA, { x: (b0 - 0.04) * L, y: -p.jawD * 1.5 });
-    const far1 = at(s.headO, s.headA, { x: 1.5 * L, y: p.headH * 1.4 });
+    const far1 = at(s.headO, s.headA, { x: 1.5 * L, y: H * 1.4 });
     const far2 = at(s.headO, jawA, { x: 1.5 * L, y: -p.jawD * 1.5 });
     bk.moveTo(q1.x, q1.y);
     bk.quadraticCurveTo(q2.x - 1, q2.y, q3.x, q3.y);
@@ -562,11 +676,16 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     ctx.moveTo(q1.x, q1.y);
     ctx.quadraticCurveTo(q2.x - 1, q2.y, q3.x, q3.y);
     ctx.stroke();
-    ctx.restore();
   }
-
-  ctx.save();
-  ctx.clip(headUnion);
+  // Meat-eaters' skulls have a big hollow in front of the eye; a hint of it reads as "dinosaur".
+  if (f.teeth && grown > 0.3 && kind !== 'croc') {
+    ctx.fillStyle = darken(pal.body, 0.3);
+    ctx.globalAlpha = 0.28 * grown;
+    ctx.beginPath();
+    ctx.ellipse(...xy(at(s.headO, s.headA, { x: L * 0.55, y: H * 0.5 })), L * 0.13, H * 0.14, s.headA - 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   shade(ctx, { x1: s.bounds.x1, x2: s.bounds.x2, y1: Math.min(s.headO.y, s.top.y) - p.jawD * 1.5, y2: s.top.y + 2 });
   ctx.restore();
 
@@ -574,14 +693,14 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     ctx.save();
     ctx.clip(skull);
     ctx.fillStyle = pal.accent;
-    const dc = at(s.headO, s.headA, { x: p.headLen * 0.24, y: p.headH * 1.02 });
+    const dc = at(s.headO, s.headA, { x: L * 0.24, y: H * 1.02 });
     ctx.beginPath();
-    ctx.ellipse(dc.x, dc.y, p.headLen * 0.46, p.headH * 0.5, s.headA - 0.1, 0, Math.PI * 2);
+    ctx.ellipse(dc.x, dc.y, L * 0.46, H * 0.5, s.headA - 0.1, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = darken(pal.accent, 0.35);
     ctx.lineWidth = o * 1.1;
     ctx.beginPath();
-    ctx.ellipse(dc.x, dc.y, p.headLen * 0.46, p.headH * 0.5, s.headA - 0.1, Math.PI * 0.95, Math.PI * 2.05, true);
+    ctx.ellipse(dc.x, dc.y, L * 0.46, H * 0.5, s.headA - 0.1, Math.PI * 0.95, Math.PI * 2.05, true);
     ctx.stroke();
     ctx.restore();
     // Knobs around the dome and snout.
@@ -593,9 +712,9 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
       { x: 0.7, y: 0.66 },
       { x: 0.84, y: 0.55 },
     ]) {
-      const k = at(s.headO, s.headA, { x: q.x * p.headLen, y: q.y * p.headH });
+      const k = at(s.headO, s.headA, { x: q.x * L, y: q.y * H });
       ctx.beginPath();
-      ctx.arc(k.x, k.y, p.headH * 0.055 + o * 0.6, 0, Math.PI * 2);
+      ctx.arc(k.x, k.y, H * 0.055 + o * 0.6, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -603,9 +722,7 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   // Tooth tips peeking out on grown-ups.
   if (!open && f.teeth && r.growth > 0.45) teeth(ctx, r, jawA, false);
 
-  // Face details.
-  const L = p.headLen;
-  const H = p.headH;
+  // Face details: mouth line, nostril, blush.
   ctx.strokeStyle = pal.outline;
   ctx.lineWidth = o * 1.1;
   if (!open) {
@@ -613,13 +730,13 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     const smile = r.eyes === 'happy' ? 0.05 * H : 0;
     const a0 = at(s.headO, s.headA, { x: 0.3 * L, y: 0.08 * H + r.baby * 0.04 * H + smile });
     const a1 = at(s.headO, s.headA, { x: 0.62 * L, y: 0.01 * H - smile * 0.5 });
-    const a2 = at(s.headO, s.headA, { x: (headKind(f) === 'croc' ? 0.97 : 0.93) * L, y: 0.02 * H });
+    const a2 = at(s.headO, s.headA, { x: (kind === 'croc' ? 0.97 : 0.93) * L, y: 0.02 * H });
     m.moveTo(a0.x, a0.y);
     m.quadraticCurveTo(a1.x, a1.y, a2.x, a2.y);
     ctx.stroke(m);
   }
-  const noseX = headKind(f) === 'croc' ? 0.52 : headKind(f) === 'duck' ? 0.8 : 0.9;
-  const nose = at(s.headO, s.headA, { x: noseX * L, y: p.snoutH * (headKind(f) === 'croc' ? 1.0 : 0.78) });
+  const noseAt = kind === 'croc' ? { x: 0.52, y: p.snoutH * 1.0 } : kind === 'duck' ? { x: 0.8, y: p.snoutH * 0.78 } : kind === 'sauro' ? { x: 0.84, y: p.snoutH * 0.95 } : { x: 0.9, y: p.snoutH * 0.78 };
+  const nose = at(s.headO, s.headA, { x: noseAt.x * L, y: noseAt.y });
   ctx.fillStyle = pal.outline;
   ctx.beginPath();
   ctx.ellipse(nose.x, nose.y, L * 0.035 + o * 0.3, H * 0.03 + o * 0.25, s.headA - 0.3, 0, Math.PI * 2);
@@ -629,7 +746,7 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     const ch = at(s.headO, s.headA, { x: (p.eyeX + 0.1) * L, y: (p.eyeY - 0.34) * H });
     ctx.fillStyle = `rgba(255, 120, 140, ${0.32 * Math.max(Math.min(1, r.baby), r.eyes === 'happy' ? 0.7 : 0)})`;
     ctx.beginPath();
-    ctx.ellipse(ch.x, ch.y, p.eyeR * 0.9, p.eyeR * 0.5, s.headA, 0, Math.PI * 2);
+    ctx.ellipse(ch.x, ch.y, p.eyeR * 0.9 + 1, p.eyeR * 0.5 + 0.6, s.headA, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -650,44 +767,30 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     part(hh, pal.horn);
   }
 
-  // Near leg and arm on top.
-  const near = s.legs[0];
-  const nearLeg = legPath(near);
-  part(nearLeg.path, pal.body);
-  ctx.save();
-  ctx.clip(nearLeg.path);
-  ctx.fillStyle = mix(pal.body, pal.belly, 0.35);
-  const thighShade = new Path2D();
-  circle(thighShade, { x: lerp(near.hip.x, near.knee.x, 0.5) - p.legW * 0.1, y: lerp(near.hip.y, near.knee.y, 0.5) - p.legW * 0.55 }, p.legW * 0.55);
-  ctx.globalAlpha = 0.5;
-  ctx.fill(thighShade);
+  // Near legs and arm on top, blending into the body.
+  const near = hindLeg(s.legs[0]);
+  nearLimb(near, pal.body, s.legs[0].hip, p.legW);
+  // A little highlight on the thigh.
+  const nl = s.legs[0];
+  const ta = Math.atan2(nl.knee.y - nl.hip.y, nl.knee.x - nl.hip.x);
+  ctx.fillStyle = lighten(pal.body, 0.25);
+  ctx.globalAlpha = 0.35;
+  ctx.beginPath();
+  ctx.ellipse(...xy(add2(lerpV(nl.hip, nl.knee, 0.42), dir(ta + Math.PI / 2, p.legW * 0.28))), p.legW * 0.62, p.legW * 0.34, ta, 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalAlpha = 1;
-  if (pal.kind !== 'none') {
-    ctx.fillStyle = pal.pattern;
-    ctx.globalAlpha = 0.55;
-    const st = new Path2D();
-    capsule(st, { x: near.hip.x - p.legW * 0.6, y: near.hip.y + p.legW * 0.5 }, p.legW * 0.25, { x: near.hip.x + p.legW * 0.1, y: near.hip.y - p.legW * 0.2 }, p.legW * 0.14);
-    ctx.fill(st);
-    ctx.globalAlpha = 1;
-  }
-  ctx.restore();
-  claws(near, nearLeg.t2, p.legW);
+  claws(near.toes, nl.ball, p.legW);
+  sickle(nl);
   if (s.fronts.length) {
-    const fl = frontPath(s.fronts[0]);
-    part(fl, pal.body);
-    ctx.save();
-    ctx.clip(fl);
-    ctx.globalAlpha = 0.45;
-    ctx.fillStyle = mix(pal.body, pal.belly, 0.35);
-    const sh = new Path2D();
-    circle(sh, { x: lerp(s.fronts[0].hip.x, s.fronts[0].knee.x, 0.5) + p.fLegW * 0.1, y: lerp(s.fronts[0].hip.y, s.fronts[0].knee.y, 0.5) - p.fLegW * 0.5 }, p.fLegW * 0.5);
-    ctx.fill(sh);
-    ctx.restore();
-    frontNails(s.fronts[0]);
+    const fl = frontLeg(s.fronts[0]);
+    nearLimb(fl, pal.body, s.fronts[0].hip, p.fLegW);
+    claws(fl.toes, s.fronts[0].ball, p.fLegW);
   }
   if (s.arms.length) {
     armFeathers(s.arms[0], pal.accent);
-    part(armPath(s.arms[0]), pal.body);
+    const na = arm(s.arms[0]);
+    nearLimb(na, pal.body, s.arms[0].shoulder, p.armW);
+    claws(na.toes, s.arms[0].hand, p.armW * 2.2);
   }
 
   // Tail ends.
@@ -701,12 +804,32 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
 /** Soft light from above: a highlight on the back and a shadow underneath. */
 function shade(ctx: Ctx, b: { x1: number; y1: number; x2: number; y2: number }) {
   const g = ctx.createLinearGradient(0, b.y2, 0, b.y1);
-  g.addColorStop(0, 'rgba(255,255,255,0.2)');
+  g.addColorStop(0, 'rgba(255,255,255,0.18)');
   g.addColorStop(0.35, 'rgba(255,255,255,0)');
-  g.addColorStop(0.7, 'rgba(0,0,0,0)');
-  g.addColorStop(1, 'rgba(20,10,30,0.16)');
+  g.addColorStop(0.65, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(20,10,30,0.18)');
   ctx.fillStyle = g;
   ctx.fillRect(b.x1 - 5, b.y1 - 5, b.x2 - b.x1 + 10, b.y2 - b.y1 + 10);
+}
+
+/** The pale underside (counter-shading) following the belly line from tail to throat. */
+function bellyBand(ctx: Ctx, st: Station[], pal: Palette) {
+  const band = (widen: number) => {
+    const outer = st.map((q) => ventralAt(q, 2));
+    const inner = st.map((q) => {
+      const tail = q.k < 0 ? clamp((q.k + 9) / 7, 0, 1) : 1; // fades out towards the tail tip
+      const w = q.dn * (q.k < 0 ? 0.62 : q.k <= 1 ? 0.66 : 0.8) * tail * widen;
+      return ventralAt(q, -w);
+    });
+    const path = new Path2D();
+    smoothClosed(path, [...outer, ...inner.reverse()], 0.9);
+    return path;
+  };
+  ctx.fillStyle = pal.belly;
+  ctx.globalAlpha = 0.45;
+  ctx.fill(band(1.25));
+  ctx.globalAlpha = 1;
+  ctx.fill(band(1));
 }
 
 function teeth(ctx: Ctx, r: Rig, jawA: number, open: boolean) {
@@ -715,31 +838,30 @@ function teeth(ctx: Ctx, r: Rig, jawA: number, open: boolean) {
   const tSize = Math.max(0.9, L * 0.045);
   ctx.fillStyle = '#fbf6e9';
   const n = open ? 6 : 3;
+  const path = new Path2D();
   for (let i = 0; i < n; i++) {
     const x = open ? 0.36 + i * 0.1 : 0.5 + i * 0.16;
     const base = at(s.headO, s.headA, { x: x * L, y: 0.01 * r.p.headH });
     const tip = at(s.headO, s.headA, { x: x * L + tSize * 0.2, y: -tSize * (open ? 1.5 : 1.25) });
     const side = at(s.headO, s.headA, { x: x * L + tSize, y: 0.01 * r.p.headH });
-    ctx.beginPath();
-    ctx.moveTo(base.x, base.y);
-    ctx.lineTo(tip.x, tip.y);
-    ctx.lineTo(side.x, side.y);
-    ctx.closePath();
-    ctx.fill();
+    path.moveTo(base.x, base.y);
+    path.lineTo(tip.x, tip.y);
+    path.lineTo(side.x, side.y);
+    path.closePath();
   }
-  if (!open) return;
-  for (let i = 0; i < 5; i++) {
-    const x = 0.4 + i * 0.1;
-    const base = at(s.headO, jawA, { x: x * L, y: -0.02 * r.p.jawD });
-    const tip = at(s.headO, jawA, { x: x * L + tSize * 0.4, y: tSize * 1.2 });
-    const side = at(s.headO, jawA, { x: x * L + tSize, y: -0.02 * r.p.jawD });
-    ctx.beginPath();
-    ctx.moveTo(base.x, base.y);
-    ctx.lineTo(tip.x, tip.y);
-    ctx.lineTo(side.x, side.y);
-    ctx.closePath();
-    ctx.fill();
+  if (open) {
+    for (let i = 0; i < 5; i++) {
+      const x = 0.4 + i * 0.1;
+      const base = at(s.headO, jawA, { x: x * L, y: -0.02 * r.p.jawD });
+      const tip = at(s.headO, jawA, { x: x * L + tSize * 0.4, y: tSize * 1.2 });
+      const side = at(s.headO, jawA, { x: x * L + tSize, y: -0.02 * r.p.jawD });
+      path.moveTo(base.x, base.y);
+      path.lineTo(tip.x, tip.y);
+      path.lineTo(side.x, side.y);
+      path.closePath();
+    }
   }
+  ctx.fill(path);
 }
 
 /** Deterministic pseudo-random 0..1 from an integer, for patterns that don't flicker. */
@@ -748,103 +870,89 @@ const hash = (i: number) => {
   return x - Math.floor(x);
 };
 
-function pattern(ctx: Ctx, r: Rig, pal: Palette, o: number) {
-  const s = r.s;
+/** Body pattern over the back and flanks. Each kind is drawn as a single path, so it's cheap. */
+function pattern(ctx: Ctx, st: Station[], pal: Palette, o: number) {
   const kind = pal.kind;
   if (kind === 'none') return;
-  ctx.fillStyle = pal.pattern;
-  ctx.strokeStyle = pal.pattern;
-  ctx.lineCap = 'round';
-  const spine = spinePoints(r);
-  if (kind === 'spots') {
-    for (let i = 1; i < spine.length; i += 1) {
-      const q = spine[i];
-      const c = add2(q.p, dir(q.up, q.r * 0.55));
-      const rr = Math.max(o * 1.2, q.r * 0.2);
-      ctx.beginPath();
-      ctx.ellipse(c.x, c.y, rr * 1.2, rr, q.up, 0, Math.PI * 2);
-      ctx.fill();
+  const path = new Path2D();
+  const on = st.filter((q) => q.k >= -7 && q.k <= 1.6);
+  if (kind === 'stripes' || kind === 'bands') {
+    const bands = kind === 'bands';
+    on.forEach((q, i) => {
+      if (!bands && i % 1) return;
+      const depth = (q.up + q.dn) * (bands ? 0.62 : 0.42);
+      const w = Math.max(o * 1.5, q.up * (bands ? 0.34 : 0.22));
+      const t = dir(q.a, w / 2);
+      const top = dorsalAt(q, 1);
+      const tip = add2(dorsalAt(q, -depth), dir(q.a, -w * 0.5));
+      path.moveTo(top.x + t.x, top.y + t.y);
+      path.quadraticCurveTo(tip.x + t.x * 0.6, tip.y + t.y * 0.6, tip.x, tip.y);
+      path.quadraticCurveTo(tip.x - t.x * 0.6, tip.y - t.y * 0.6, top.x - t.x, top.y - t.y);
+      path.closePath();
+    });
+  } else if (kind === 'spots') {
+    on.forEach((q, i) => {
+      const c = dorsalAt(q, -q.up * 0.45);
+      const rr = Math.max(o * 1.2, q.up * 0.2);
+      path.moveTo(c.x + rr * 1.2, c.y);
+      path.ellipse(c.x, c.y, rr * 1.2, rr, q.a, 0, Math.PI * 2);
       if (i % 2 === 0) {
-        const c2 = add2(q.p, dir(q.up + 0.5, q.r * 0.8));
-        ctx.beginPath();
-        ctx.arc(c2.x, c2.y, rr * 0.6, 0, Math.PI * 2);
-        ctx.fill();
+        const c2 = dorsalAt(q, -q.up * 1.1);
+        path.moveTo(c2.x + rr * 0.6, c2.y);
+        path.arc(c2.x, c2.y, rr * 0.6, 0, Math.PI * 2);
       }
-    }
-    return;
-  }
-  if (kind === 'rosettes') {
-    // Broken rings with a darker-than-body centre, like a leopard.
-    const inner = mix(pal.body, pal.pattern, 0.35);
-    for (let i = 1; i < spine.length; i++) {
-      const q = spine[i];
-      for (const [off, sz] of [
-        [0.55, 0.24],
-        [0.05, 0.18],
-      ] as const) {
-        if (off < 0.3 && i % 2) continue;
-        const c = add2(q.p, dir(q.up + (i % 2 ? 0.25 : -0.2), q.r * off));
-        const rr = Math.max(o * 1.6, q.r * sz);
-        ctx.fillStyle = inner;
-        ctx.beginPath();
-        ctx.ellipse(c.x, c.y, rr, rr * 0.8, q.up, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.lineWidth = Math.max(o * 0.9, rr * 0.34);
-        ctx.setLineDash([rr * 0.9, rr * 0.45]);
-        ctx.beginPath();
-        ctx.ellipse(c.x, c.y, rr, rr * 0.8, q.up, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
-    return;
-  }
-  if (kind === 'speckles') {
-    for (let i = 0; i < spine.length; i++) {
-      const q = spine[i];
+    });
+  } else if (kind === 'speckles') {
+    on.forEach((q, i) => {
       for (let k = 0; k < 4; k++) {
-        const h1 = hash(i * 7 + k);
-        const h2 = hash(i * 13 + k * 3 + 1);
-        const c = add2(q.p, dir(q.up + (h1 - 0.5) * 1.6, q.r * (0.25 + 0.65 * h2)));
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, Math.max(o * 0.8, q.r * (0.06 + 0.06 * hash(i + k * 5))), 0, Math.PI * 2);
-        ctx.fill();
+        const c = dorsalAt(q, -(q.up + q.dn) * (0.08 + 0.5 * hash(i * 13 + k * 3 + 1)));
+        const d = add2(c, dir(q.a, (hash(i * 7 + k) - 0.5) * q.up * 0.8));
+        const rr = Math.max(o * 0.8, q.up * (0.05 + 0.06 * hash(i + k * 5)));
+        path.moveTo(d.x + rr, d.y);
+        path.arc(d.x, d.y, rr, 0, Math.PI * 2);
       }
-    }
-    return;
-  }
-  if (kind === 'saddle') {
-    // A dark saddle over the back, fading at the edges.
-    const pts = spine.filter((q) => q.k > -5);
-    for (const [w, alpha] of [
-      [0.95, 0.35],
-      [0.7, 1],
-    ] as const) {
-      ctx.globalAlpha = alpha;
-      const path = new Path2D();
-      pts.forEach((q, i) => {
-        const c = add2(q.p, dir(q.up, q.r * 0.95));
-        if (i === 0) path.moveTo(c.x, c.y);
-        else path.lineTo(c.x, c.y);
-      });
-      ctx.lineWidth = Math.max(o * 2, (s.hipR + s.chestR) * 0.5 * w);
-      ctx.stroke(path);
-    }
+    });
+  } else if (kind === 'saddle') {
+    // A dark saddle over the back, softer at its edge.
+    const sad = on.filter((q) => q.k > -5 && q.k <= 1);
+    const edge = (w: number) => {
+      const p2 = new Path2D();
+      smoothClosed(p2, [...sad.map((q) => dorsalAt(q, 2)), ...sad.map((q) => dorsalAt(q, -(q.up + q.dn) * w)).reverse()], 0.9);
+      return p2;
+    };
+    ctx.fillStyle = pal.pattern;
+    ctx.globalAlpha = 0.4;
+    ctx.fill(edge(0.62));
     ctx.globalAlpha = 1;
+    ctx.fill(edge(0.48));
+    return;
+  } else if (kind === 'rosettes') {
+    const ring = new Path2D();
+    on.forEach((q, i) => {
+      for (const [off, sz] of [
+        [0.5, 0.26],
+        [1.05, 0.2],
+      ] as const) {
+        if (off > 1 && i % 2) continue;
+        const c = add2(dorsalAt(q, -q.up * off), dir(q.a, (i % 2 ? 0.2 : -0.15) * q.up));
+        const rr = Math.max(o * 1.6, q.up * sz);
+        path.moveTo(c.x + rr, c.y);
+        path.ellipse(c.x, c.y, rr, rr * 0.8, q.a, 0, Math.PI * 2);
+        ring.moveTo(c.x + rr, c.y);
+        ring.ellipse(c.x, c.y, rr, rr * 0.8, q.a, 0, Math.PI * 2);
+      }
+    });
+    ctx.fillStyle = mix(pal.body, pal.pattern, 0.35);
+    ctx.fill(path);
+    ctx.strokeStyle = pal.pattern;
+    ctx.lineWidth = Math.max(o * 1.1, 1.2);
+    ctx.setLineDash([2.2, 1.2]);
+    ctx.stroke(ring);
+    ctx.setLineDash([]);
     return;
   }
-  const bands = kind === 'bands';
-  for (let i = 0; i < spine.length; i++) {
-    const q = spine[i];
-    const w = Math.max(o * 1.4, q.r * (bands ? 0.32 : 0.26));
-    ctx.lineWidth = w;
-    const a = add2(q.p, dir(q.up, q.r * 1.1));
-    const b = add2(q.p, dir(q.up - 0.2, q.r * (bands ? -0.1 : 0.35)));
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
+  ctx.fillStyle = pal.pattern;
+  ctx.fill(path);
 }
 
 function eye(ctx: Ctx, r: Rig, pal: Palette, f: Features, o: number) {
@@ -1005,21 +1113,17 @@ function tailFeathers(ctx: Ctx, r: Rig, pal: Palette, o: number) {
   }
 }
 
-function spikePath(r: Rig): Path2D {
-  const s = r.s;
+/** Back spikes along the torso and tail. */
+function spikePath(st: Station[]): Path2D {
   const path = new Path2D();
-  const pts: { p: V; up: number; r: number }[] = [];
-  for (let i = 1; i < s.tail.length - 2; i++) {
-    const a = Math.atan2(s.tail[i - 1].p.y - s.tail[i].p.y, s.tail[i - 1].p.x - s.tail[i].p.x);
-    pts.push({ p: s.tail[i].p, up: a + Math.PI / 2, r: s.tail[i].r });
-  }
-  for (let t = 0; t <= 1; t += 0.34) pts.push({ p: { x: lerp(s.hip.x, s.chest.x, t), y: lerp(s.hip.y, s.chest.y, t) }, up: s.pitch + Math.PI / 2, r: lerp(s.hipR, s.chestR, t) });
-  for (const q of pts) {
-    const base = add2(q.p, dir(q.up, q.r * 0.85));
-    const tip = add2(q.p, dir(q.up + 0.35, q.r * 0.85 + Math.max(2.5, q.r * 0.55)));
-    const side = q.r * 0.28 + 1;
-    const b1 = add2(base, dir(q.up + Math.PI / 2, side));
-    const b2 = add2(base, dir(q.up - Math.PI / 2, side));
+  for (const q of st) {
+    if (q.k < -7 || q.k > 1) continue;
+    const base = dorsalAt(q, -q.up * 0.15);
+    const up = q.a + Math.PI / 2;
+    const tip = add2(base, dir(up - 0.35, Math.max(2.5, q.up * 0.55)));
+    const side = q.up * 0.28 + 1;
+    const b1 = add2(base, dir(q.a, side));
+    const b2 = add2(base, dir(q.a, -side));
     path.moveTo(b1.x, b1.y);
     path.lineTo(tip.x, tip.y);
     path.lineTo(b2.x, b2.y);
@@ -1047,19 +1151,17 @@ function hornPath(r: Rig): Path2D {
 // ---------------- species features ----------------
 
 /** Spinosaurus sail: tall spines joined by skin, highest over the middle of the back. */
-function drawSail(ctx: Ctx, r: Rig, pal: Palette, o: number) {
-  const s = r.s;
-  const p = r.p;
-  const k = 0.3 + 0.7 * (1 - r.baby);
-  const pts = spinePoints(r, 2).filter((q) => q.k >= -2);
+function drawSail(ctx: Ctx, pal: Palette, o: number, st: Station[], p: BodyParams, grown: number) {
+  const k = 0.3 + 0.7 * grown;
+  const pts = st.filter((q) => q.k >= -2 && q.k <= 1);
   const n = pts.length;
   const top: V[] = [];
   const base: V[] = [];
   pts.forEach((q, i) => {
     const u = i / (n - 1);
     const h = (p.bodyLen * 0.95 * Math.pow(Math.sin(Math.PI * clamp(u * 0.95 + 0.03, 0, 1)), 0.8) + 1) * k;
-    base.push(add2(q.p, dir(q.up, q.r * 0.6)));
-    top.push(add2(q.p, dir(q.up - 0.08, q.r * 0.6 + h)));
+    base.push(dorsalAt(q, -q.up * 0.35));
+    top.push(add2(dorsalAt(q), dir(q.a + Math.PI / 2 - 0.08, h)));
   });
   const sail = new Path2D();
   sail.moveTo(base[0].x, base[0].y);
@@ -1079,62 +1181,52 @@ function drawSail(ctx: Ctx, r: Rig, pal: Palette, o: number) {
   ctx.stroke(sail);
   ctx.fillStyle = pal.accent;
   ctx.fill(sail);
-  ctx.save();
-  ctx.clip(sail);
-  // Lighter skin near the top, darker spines.
-  ctx.fillStyle = lighten(pal.accent, 0.18);
-  const glow = new Path2D();
-  for (let i = 0; i < n; i++) circle(glow, top[i], p.bodyLen * 0.18 * k);
-  ctx.fill(glow);
+  // Darker spines through the skin.
   ctx.strokeStyle = darken(pal.accent, 0.25);
   ctx.lineWidth = o * 0.9;
+  ctx.beginPath();
   for (let i = 1; i < n - 1; i++) {
-    ctx.beginPath();
+    const t = lerpV(base[i], top[i], 0.93);
     ctx.moveTo(base[i].x, base[i].y);
-    ctx.lineTo(top[i].x, top[i].y);
-    ctx.stroke();
+    ctx.lineTo(t.x, t.y);
   }
-  ctx.restore();
-  void s;
+  ctx.stroke();
 }
 
 /** Stegosaurus plates: two alternating rows along the back, biggest over the hips. */
-function drawPlates(ctx: Ctx, r: Rig, pal: Palette, o: number, far: boolean) {
-  const p = r.p;
-  const k = 0.3 + 0.7 * (1 - r.baby);
-  const pts = spinePoints(r, 6, true);
+function drawPlates(ctx: Ctx, pal: Palette, o: number, st: Station[], p: BodyParams, grown: number, far: boolean) {
+  const k = 0.3 + 0.7 * grown;
+  const pts = st.filter((q) => q.k >= -6);
   const color = far ? darken(pal.accent, 0.2) : pal.accent;
-  ctx.lineJoin = 'round';
+  const plates = new Path2D();
+  const glints = new Path2D();
   pts.forEach((q, i) => {
     if ((i % 2 === 0) !== far) return;
-    // Height profile: small on the neck and tail, tallest just in front of the hips.
-    const x = q.k; // -6..-1 tail, 0..1 torso, 2..3 neck
-    const peak = x < 0 ? 1 - Math.min(1, -x / 7) * 0.75 : x <= 1 ? 1 - x * 0.35 : 0.5 - (x - 1) * 0.12;
+    // Small on the neck and tail, tallest just in front of the hips.
+    const x = q.k;
+    const peak = x < 0 ? 1 - Math.min(1, -x / 7) * 0.75 : x <= 1 ? 1 - x * 0.35 : 0.5 - (x - 1) * 0.35;
     const h = Math.max(2, p.hipR * 1.05 * peak * k);
     const w = h * 0.62;
-    const base = add2(q.p, dir(q.up, q.r * 0.7));
-    const ang = q.up + (far ? 0.12 : 0.02);
+    const base = dorsalAt(q, -q.up * 0.25);
+    const ang = q.a + Math.PI / 2 + (far ? 0.12 : 0.02);
     const tip = add2(base, dir(ang, h));
     const mid = add2(base, dir(ang, h * 0.42));
     const side = dir(ang + Math.PI / 2, w / 2);
-    const plate = new Path2D();
-    plate.moveTo(base.x + side.x * 0.45, base.y + side.y * 0.45);
-    plate.quadraticCurveTo(mid.x + side.x * 1.3, mid.y + side.y * 1.3, tip.x, tip.y);
-    plate.quadraticCurveTo(mid.x - side.x * 1.3, mid.y - side.y * 1.3, base.x - side.x * 0.45, base.y - side.y * 0.45);
-    plate.closePath();
-    ctx.strokeStyle = pal.outline;
-    ctx.lineWidth = o * 2;
-    ctx.stroke(plate);
-    ctx.fillStyle = color;
-    ctx.fill(plate);
-    ctx.save();
-    ctx.clip(plate);
-    ctx.fillStyle = lighten(color, 0.22);
-    ctx.beginPath();
-    ctx.ellipse(mid.x - side.x * 0.2, mid.y - side.y * 0.2, w * 0.26, h * 0.3, ang, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    plates.moveTo(base.x + side.x * 0.45, base.y + side.y * 0.45);
+    plates.quadraticCurveTo(mid.x + side.x * 1.3, mid.y + side.y * 1.3, tip.x, tip.y);
+    plates.quadraticCurveTo(mid.x - side.x * 1.3, mid.y - side.y * 1.3, base.x - side.x * 0.45, base.y - side.y * 0.45);
+    plates.closePath();
+    const g = add2(mid, dir(ang, h * 0.05));
+    glints.moveTo(g.x + w * 0.22, g.y);
+    glints.ellipse(g.x - side.x * 0.2, g.y - side.y * 0.2, w * 0.22, h * 0.26, ang, 0, Math.PI * 2);
   });
+  ctx.strokeStyle = pal.outline;
+  ctx.lineWidth = o * 2;
+  ctx.stroke(plates);
+  ctx.fillStyle = color;
+  ctx.fill(plates);
+  ctx.fillStyle = lighten(color, 0.22);
+  ctx.fill(glints);
 }
 
 /** Stegosaurus tail spikes; the far pair is drawn behind the tail, the near pair in front. */
@@ -1191,35 +1283,37 @@ function drawClub(ctx: Ctx, r: Rig, pal: Palette, o: number) {
 }
 
 /** Ankylosaurus: short blunt spikes along the back. */
-function armorSpikes(r: Rig): Path2D {
+function armorSpikes(st: Station[], grown: number): Path2D {
   const path = new Path2D();
-  const k = 0.35 + 0.65 * (1 - r.baby);
-  for (const q of spinePoints(r, 5)) {
-    const base = add2(q.p, dir(q.up + 0.25, q.r * 0.82));
-    horn(path, base, q.up + 0.55, Math.max(1.5, q.r * 0.42 * k), q.r * 0.34, 0);
+  const k = 0.35 + 0.65 * grown;
+  for (const q of st) {
+    if (q.k < -5 || q.k > 1) continue;
+    const up = q.a + Math.PI / 2;
+    horn(path, dorsalAt(q, -q.up * 0.18), up - 0.55, Math.max(1.5, q.up * 0.42 * k), q.up * 0.34, 0);
   }
   return path;
 }
 
 /** Ankylosaurus: bony plates (osteoderms) in rows over the back. */
-function scutes(ctx: Ctx, r: Rig, pal: Palette, o: number) {
-  const fillC = mix(pal.accent, pal.body, 0.35);
-  ctx.strokeStyle = darken(pal.body, 0.35);
-  ctx.lineWidth = o * 0.8;
-  for (const q of spinePoints(r, 6)) {
+function scutes(ctx: Ctx, st: Station[], pal: Palette, o: number) {
+  const path = new Path2D();
+  for (const q of st) {
+    if (q.k < -6 || q.k > 1) continue;
     for (const [off, sz] of [
-      [0.62, 0.2],
-      [0.22, 0.16],
+      [0.38, 0.2],
+      [0.78, 0.16],
     ] as const) {
-      const c = add2(q.p, dir(q.up, q.r * off));
-      const rr = Math.max(o * 1.5, q.r * sz);
-      ctx.fillStyle = fillC;
-      ctx.beginPath();
-      ctx.ellipse(c.x, c.y, rr * 1.2, rr * 0.85, q.up - Math.PI / 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      const c = dorsalAt(q, -q.up * off);
+      const rr = Math.max(o * 1.5, q.up * sz);
+      path.moveTo(c.x + rr * 1.2, c.y);
+      path.ellipse(c.x, c.y, rr * 1.2, rr * 0.85, q.a, 0, Math.PI * 2);
     }
   }
+  ctx.fillStyle = mix(pal.accent, pal.body, 0.35);
+  ctx.fill(path);
+  ctx.strokeStyle = darken(pal.body, 0.35);
+  ctx.lineWidth = o * 0.8;
+  ctx.stroke(path);
 }
 
 /** Spinosaurus: a fin along the top and bottom of the tail. */
