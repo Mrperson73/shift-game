@@ -7,6 +7,16 @@ on:
   pull_request:
     paths: ['knobs/**', '.github/workflows/knobs.yml']
   workflow_dispatch:
+    inputs:
+      release:
+        description: Publish a GitHub release (knobs-v<package.json version>) once the builds pass
+        type: boolean
+        default: false
+
+# A newer push to the same PR cancels the older run. Release runs are never cancelled.
+concurrency:
+  group: knobs-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -144,12 +154,13 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/knobs-v')
+    if: startsWith(github.ref, 'refs/tags/knobs-v') || (github.event_name == 'workflow_dispatch' && inputs.release)
     needs: package
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -159,7 +170,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" artifacts/* \
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then tag="$GITHUB_REF_NAME"
+          else tag="knobs-v$(node -p "require('./knobs/package.json').version")"; fi
+          cat > notes.md <<'EOF'
+          **Windows:** download `Knobs-Setup-*.exe` and double-click it. It installs for your user only (no admin prompt), adds Start menu and desktop shortcuts, and opens Knobs when it's done.
+
+          Knobs isn't code-signed, so SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
+
+          **Portable:** extract `Knobs-Portable-*.zip` to a folder and run `Knobs.exe` from there.
+          **Linux:** `chmod +x` the AppImage and run it.
+
+          Before this release was published, CI installed the Windows build on a clean machine, launched it with `--smoke-test` and uninstalled it. SHA-256 checksums are in `SHA256SUMS-*.txt`. Build provenance: `gh attestation verify <file> -R Mrperson73/shift-game`.
+          EOF
+          gh release create "$tag" artifacts/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Knobs ${GITHUB_REF_NAME#knobs-v}" \
-            --notes "Windows: download Knobs-Setup and double-click it. It installs for your user only (no admin prompt) and opens Knobs when done. Portable: unzip Knobs-Portable and run Knobs.exe. Linux: chmod +x the AppImage. Checksums are in SHA256SUMS-*.txt."
+            --target "$GITHUB_SHA" \
+            --title "Knobs ${tag#knobs-v}" \
+            --notes-file notes.md
