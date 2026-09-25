@@ -21,4 +21,13 @@ cpSync('src/overlay/index.html', 'dist/renderer/overlay.html');
 cpSync('src/overlay/overlay.css', 'dist/renderer/overlay.css');
 cpSync('src/panel/index.html', 'dist/renderer/panel.html');
 cpSync('src/panel/panel.css', 'dist/renderer/panel.css');
+// The panel's bundled fonts (latin + latin-ext), flat next to panel.css.
+for (const [pkg, weights] of [['fredoka', [500, 600, 700]], ['nunito', [400, 600, 700, 800]]]) {
+  for (const w of weights) {
+    for (const subset of ['latin', 'latin-ext']) {
+      const file = `${pkg}-${subset}-${w}-normal.woff2`;
+      cpSync(`node_modules/@fontsource/${pkg}/files/${file}`, `dist/renderer/${file}`);
+    }
+  }
+}
 console.log('built dist/');

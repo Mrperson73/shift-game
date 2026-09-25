@@ -38,6 +38,23 @@ const petNow = (overlay: Page) => overlay.evaluate(() => {
 });
 
 const mainErrors = () => app.evaluate(() => (global as unknown as { __hatchling: { errors: string[] } }).__hatchling.errors);
+const saved = () => JSON.parse(fs.readFileSync(path.join(userData, 'hatchling.json'), 'utf8'));
+/** Records the commands the overlay receives (whatever the pet does with them). */
+type Cmd = { type: string; name?: string; variant?: number; colors?: { pattern_kind: string } | null };
+const listenCommands = (overlay: Page) =>
+  overlay.evaluate(() => {
+    const w = window as unknown as { __cmds?: unknown[]; hatch: { onCommand: (cb: (c: unknown) => void) => void } };
+    if (w.__cmds) return;
+    const list: unknown[] = (w.__cmds = []);
+    w.hatch.onCommand((c) => list.push(c));
+  });
+const commands = (overlay: Page) => overlay.evaluate(() => (window as unknown as { __cmds: Cmd[] }).__cmds);
+/** Screenshots wait for the entrance animations and number count-ups to settle. */
+const snap = async (panel: Page, name: string) => {
+  if (!SHOTS) return;
+  await panel.waitForTimeout(1500);
+  await panel.screenshot({ path: path.join(SHOTS, name) });
+};
 
 test.describe.serial('Hatchling', () => {
   test.beforeAll(async () => {
@@ -55,15 +72,18 @@ test.describe.serial('Hatchling', () => {
   test('first run asks you to choose an egg', async () => {
     const panel = await windowBy('panel');
     await expect(panel.getByRole('heading', { name: 'Choose your egg' })).toBeVisible();
-    await expect(panel.getByRole('radio', { name: 'Rex' })).toBeVisible();
-    await expect(panel.getByRole('radio', { name: 'Raptor' })).toBeVisible();
-    await expect(panel.getByRole('radio', { name: 'Pachy' })).toBeVisible();
-    if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'panel-choose.png') });
+    await expect(panel.getByRole('radio', { name: 'Rex', exact: true })).toBeVisible();
+    await expect(panel.getByRole('radio', { name: 'Raptor', exact: true })).toBeVisible();
+    await expect(panel.getByRole('radio', { name: 'Pachy', exact: true })).toBeVisible();
+    // The page keeps the title bar clear for Windows' own minimise and close buttons.
+    const bar = await panel.locator('.titlebar').boundingBox();
+    expect(bar?.height).toBe(40);
+    await snap(panel, 'panel-choose.png');
   });
 
   test('hatching an egg puts it on the taskbar', async () => {
     const panel = await windowBy('panel');
-    await panel.getByRole('radio', { name: 'Raptor' }).click();
+    await panel.getByRole('radio', { name: 'Raptor', exact: true }).click();
     await expect(panel.getByText('Utahraptor')).toBeVisible();
     await panel.getByLabel('Name').fill('Tiny');
     await panel.getByLabel('Start Hatchling when Windows starts').uncheck();
@@ -128,8 +148,16 @@ test.describe.serial('Hatchling', () => {
     await expect(panel.getByRole('button', { name: /Tiny/ }).first()).toBeVisible();
     await expect(panel.locator('.stage strong')).toHaveText('Hatchling');
     await expect(panel.getByRole('meter', { name: 'Growth' })).toBeVisible();
-    await expect(panel.getByText('meals')).toBeVisible();
-    if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'panel-card.png') });
+    await expect(panel.getByText('Progress saves automatically')).toBeVisible();
+    await expect(panel.getByText('meals', { exact: true })).toBeVisible();
+    await expect(panel.getByRole('meter', { name: 'Mood' })).toBeVisible();
+    await expect(panel.locator('.badge.done', { hasText: 'Hello, world' })).toBeVisible();
+    await snap(panel, 'panel-card.png');
+    if (SHOTS) {
+      await panel.locator('.badges-card').scrollIntoViewIfNeeded();
+      await snap(panel, 'panel-card-badges.png');
+      await panel.locator('.content').evaluate((el) => el.scrollTo(0, 0));
+    }
   });
 
   test('renaming from the card', async () => {
@@ -141,17 +169,63 @@ test.describe.serial('Hatchling', () => {
     await expect.poll(async () => (await pet(overlay)).data.name).toBe('Blue');
   });
 
+  test('actions and tricks from the card', async () => {
+    const panel = await windowBy('panel');
+    const overlay = await windowBy('overlay');
+    await listenCommands(overlay);
+    await panel.getByRole('button', { name: 'Feed', exact: true }).click();
+    await expect.poll(async () => (await pet(overlay)).foods).toBeGreaterThan(0);
+    const dance = panel.getByRole('button', { name: 'Dance', exact: true });
+    await dance.click();
+    await expect(dance).toHaveClass(/doing/);
+    await expect.poll(async () => (await commands(overlay)).some((c) => c.type === 'trick' && c.name === 'dance')).toBe(true);
+    // Tricks wait for the one that's playing.
+    await expect(panel.getByRole('button', { name: 'Roar', exact: true })).toHaveAttribute('aria-disabled', 'true');
+    await expect(panel.getByRole('button', { name: 'Roar', exact: true })).toHaveAttribute('aria-disabled', 'false', { timeout: 5000 });
+  });
+
+  test('colours can be tried on and applied', async () => {
+    const panel = await windowBy('panel');
+    await panel.getByRole('tab', { name: 'Colours' }).click();
+    await expect(panel.getByRole('tab', { name: 'Colours' })).toHaveAttribute('aria-selected', 'true');
+    await panel.getByRole('radio', { name: 'Plum', exact: true }).click();
+    await expect(panel.getByText('Trying on: Plum')).toBeVisible();
+    await snap(panel, 'panel-colours.png');
+    const overlay = await windowBy('overlay');
+    await listenCommands(overlay);
+    await panel.getByRole('button', { name: 'Apply' }).click();
+    await expect(panel.getByRole('button', { name: 'Applied!' })).toBeVisible();
+    await expect.poll(async () => (await commands(overlay)).some((c) => c.type === 'recolor' && c.variant === 2 && c.colors === null)).toBe(true);
+    // Hand-mixed colours go through too.
+    await panel.getByRole('button', { name: 'Surprise me' }).click();
+    await panel.getByRole('radio', { name: 'Spots', exact: true }).click();
+    await panel.getByRole('button', { name: 'Apply' }).click();
+    await expect.poll(async () => (await commands(overlay)).some((c) => c.type === 'recolor' && c.colors?.pattern_kind === 'spots')).toBe(true);
+  });
+
   test('settings apply live and persist', async () => {
     const panel = await windowBy('panel');
-    await panel.getByRole('button', { name: 'Settings' }).click();
+    await panel.getByRole('tab', { name: 'Settings' }).click();
     await panel.getByRole('radio', { name: 'Large' }).click();
     await panel.getByRole('radio', { name: 'Chatty' }).click();
     await panel.getByRole('switch', { name: /Sounds/ }).uncheck();
     const overlay = await windowBy('overlay');
     await expect.poll(() => overlay.evaluate(() => (window as unknown as { __test: { pet: { settings: { size: string; speech: string; sound: boolean } } } }).__test.pet.settings)).toMatchObject({ size: 'L', speech: 'chatty', sound: false });
-    if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'panel-settings.png') });
-    const saved = JSON.parse(fs.readFileSync(path.join(userData, 'hatchling.json'), 'utf8'));
-    expect(saved.settings).toMatchObject({ size: 'L', speech: 'chatty', sound: false });
+    await snap(panel, 'panel-settings.png');
+    expect(saved().settings).toMatchObject({ size: 'L', speech: 'chatty', sound: false });
+  });
+
+  test('themes switch instantly and persist', async () => {
+    const panel = await windowBy('panel');
+    await panel.getByRole('radio', { name: 'Midnight', exact: true }).click();
+    await expect(panel.locator('html')).toHaveAttribute('data-theme', 'midnight');
+    await expect(panel.getByRole('radio', { name: 'Midnight', exact: true })).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => saved().settings.theme).toBe('midnight');
+    if (SHOTS) {
+      await panel.getByRole('tab', { name: 'Pet' }).click();
+      await snap(panel, 'panel-dark.png');
+      await panel.getByRole('tab', { name: 'Settings' }).click();
+    }
   });
 
   test('custom species from the mods folder show up as eggs', async () => {
@@ -164,6 +238,12 @@ test.describe.serial('Hatchling', () => {
     await panel.getByRole('button', { name: 'Open species folder' }).click();
     await expect(panel.getByText('Loaded: Allo')).toBeVisible({ timeout: 5000 });
     await expect(panel.getByText(/bad\.json/)).toBeVisible();
+    // ...and hatch from the egg chooser.
+    await app.evaluate(() => (global as unknown as { __hatchling: { openPanel: (v: string) => void } }).__hatchling.openPanel('choose'));
+    await expect(panel.getByRole('heading', { name: 'Choose a new egg' })).toBeVisible();
+    await expect(panel.getByRole('radio', { name: 'Allo', exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: 'Cancel' }).click();
+    await expect(panel.getByRole('tab', { name: 'Pet' })).toHaveAttribute('aria-selected', 'true');
   });
 
   test('a game starting makes it react', async () => {
