@@ -592,7 +592,9 @@ function harden() {
     const file = path.resolve(RENDERER, rel);
     if (u.host !== 'app' || !file.startsWith(RENDERER + path.sep) || !/^[\w.-]+$/.test(rel)) return new Response('Not found', { status: 404 });
     try {
-      const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.png') ? 'image/png' : 'application/octet-stream';
+      const ext = path.extname(file).toLowerCase();
+      const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff' };
+      const type = TYPES[ext] ?? 'application/octet-stream';
       return new Response(fs.readFileSync(file), { headers: { 'content-type': type, 'cache-control': 'no-cache' } });
     } catch {
       return new Response('Not found', { status: 404 });
