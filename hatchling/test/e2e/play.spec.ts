@@ -85,12 +85,17 @@ test.describe.serial('Hatchling 1.2 play', () => {
     await send({ type: 'toy', toy: 'bone' });
     // Wait for it to come to rest on the taskbar.
     await expect.poll(async () => (await pet()).toys.some((t) => t.kind === 'bone' && t.on && !t.carried), { timeout: 20_000 }).toBe(true);
-    const bone = (await pet()).toys.find((t) => t.kind === 'bone')!;
-    const at = { x: bone.x, y: bone.y - (bone.r ?? 9) };
-    await overlay.mouse.move(at.x, at.y);
-    await overlay.mouse.down();
-    for (let i = 1; i <= 6; i++) await overlay.mouse.move(at.x + (at.x > 800 ? -1 : 1) * i * 40, at.y - i * 25);
-    await overlay.mouse.up();
+    // Grab it where it is and fling it (again if the dino got to it first and walked off with it).
+    for (let tries = 0; tries < 4; tries++) {
+      const bone = (await pet()).toys.find((t) => t.kind === 'bone')!;
+      const at = { x: bone.x, y: bone.y - (bone.r ?? 9) };
+      await overlay.mouse.move(at.x, at.y);
+      await overlay.mouse.down();
+      for (let i = 1; i <= 6; i++) await overlay.mouse.move(at.x + (at.x > 800 ? -1 : 1) * i * 40, at.y - i * 25);
+      await overlay.mouse.up();
+      if ((await pet()).toys.find((t) => t.kind === 'bone')?.thrown) break;
+      await overlay.waitForTimeout(300);
+    }
     await expect.poll(async () => (await pet()).toys.find((t) => t.kind === 'bone')?.thrown).toBe(true);
     // It runs to it and picks it up.
     await expect.poll(async () => !!(await pet()).toys.find((t) => t.kind === 'bone')?.carried, { timeout: 30_000 }).toBe(true);

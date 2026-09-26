@@ -689,8 +689,9 @@ window.addEventListener('mousemove', (e) => {
   cursor = p;
   mouseAt = performance.now();
   if (down && !dragging && Math.hypot(p.x - down.x, p.y - down.y) > 5) {
+    // Small things win over the dino they're next to (or in the mouth of): a ball, then a toy.
     const b = ballAt(down);
-    const t = down.host ? null : toyAt(down);
+    const t = toyAt(down);
     if (b && b.pet.grabBall(down)) dragging = { host: b, what: 'ball' };
     else if (t && t.pet.grabToy(down)) dragging = { host: t, what: 'toy' };
     else if (down.host) {
@@ -733,9 +734,9 @@ window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
   const at = down;
   const quick = !dragging && !!at && performance.now() - at.t < 450;
-  const tap = quick && at!.host && at!.host.pet.hitTest(at!) ? at!.host : null;
-  // A quick tap on a toy (squeeze the duck, pop a bubble).
-  const toy = quick && !tap ? toyAt(at!) : null;
+  // A quick tap on a toy (squeeze the duck, pop a bubble), or else on the dino.
+  const toy = quick ? toyAt(at!) : null;
+  const tap = quick && !toy && at!.host && at!.host.pet.hitTest(at!) ? at!.host : null;
   endPointer({ x: e.clientX, y: e.clientY });
   tap?.pet.poke();
   toy?.pet.tapToy(at!);
