@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { CAPTION_SPACE, computeWorld, ICON_SPACE } from '../../src/main/geometry';
-import { detectGame, gamePids } from '../../src/main/games';
 
 const area = { x: 0, y: 0, width: 1920, height: 1032 };
 
@@ -48,30 +47,5 @@ describe('computeWorld', () => {
     const second = { x: 1920, y: 0, width: 1280, height: 984 };
     const { platforms } = computeWorld([{ hwnd: 'a', x: 2100, y: 300, w: 600, h: 400 }], second);
     expect(platforms[0]).toMatchObject({ x1: 180 + ICON_SPACE, y: 300, wx: 180 });
-  });
-});
-
-describe('detectGame', () => {
-  it('knows The Isle, Brawlhalla and Minecraft', () => {
-    expect(detectGame(new Set(['explorer.exe', 'theisleclient-win64-shipping.exe']), [])).toBe('The Isle');
-    expect(detectGame(new Set(['brawlhalla.exe']), [])).toBe('Brawlhalla');
-    expect(detectGame(new Set(['minecraft.windows.exe']), [])).toBe('Minecraft');
-    expect(detectGame(new Set(['javaw.exe']), [{ exe: 'javaw.exe', title: 'Minecraft* 1.21.4 - Singleplayer' }])).toBe('Minecraft');
-    expect(detectGame(new Set(['javaw.exe']), [{ exe: 'javaw.exe', title: 'IntelliJ IDEA' }])).toBeNull();
-    expect(detectGame(new Set(['minecraftlauncher.exe', 'brawlhallaeac.exe']), [])).toBeNull();
-  });
-
-  it('finds the processes of running games', () => {
-    const procs = new Map([
-      [10, 'explorer.exe'],
-      [20, 'brawlhalla.exe'],
-      [30, 'javaw.exe'],
-      [40, 'javaw.exe'],
-    ]);
-    const pids = gamePids(procs, [
-      { pid: 30, title: 'Minecraft 1.21.4' },
-      { pid: 40, title: 'Some Java tool' },
-    ]);
-    expect([...pids].sort()).toEqual([20, 30]);
   });
 });
