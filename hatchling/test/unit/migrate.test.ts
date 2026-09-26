@@ -27,10 +27,12 @@ it('a 1.1 save (rev 2) becomes a roster with that pet out, on the screen it live
   const s = new Store(f);
   expect(s.recovered).toBeNull();
   expect(s.data.rev).toBe(REV);
-  expect(s.data.roster).toEqual([{ pet, display: 2779098405 }]);
+  // Old saves have no togetherSeconds: it starts from the growth time.
+  const migrated = { ...pet, togetherSeconds: 99_000 };
+  expect(s.data.roster).toEqual([{ pet: migrated, display: 2779098405 }]);
   expect(s.data.out).toEqual(['k3j9x']);
   expect(s.data.selected).toBe('k3j9x');
-  expect(s.data.history).toEqual(history);
+  expect(s.data.history).toEqual([{ ...history[0], togetherSeconds: 50 }]);
   // Settings carry over (1.1 users chose to hide over full-screen apps: that stays), plus the new ones.
   expect(s.data.settings).toMatchObject({ size: 'L', sound: false, speech: 'chatty', explore: false, hideFullscreen: true, theme: 'midnight', monitors: 'all', growthSpeed: 1, power: 'balanced', videoReactions: true });
   expect('display' in s.data.settings).toBe(false);
@@ -38,7 +40,7 @@ it('a 1.1 save (rev 2) becomes a roster with that pet out, on the screen it live
   s.save();
   const raw = JSON.parse(fs.readFileSync(f, 'utf8'));
   expect(raw).toMatchObject({ rev: REV, out: ['k3j9x'], selected: 'k3j9x', pet: { id: 'k3j9x', name: 'Blue' } });
-  expect(new Store(f).data.roster).toEqual([{ pet, display: 2779098405 }]);
+  expect(new Store(f).data.roster).toEqual([{ pet: migrated, display: 2779098405 }]);
 });
 
 it('a 1.1 save without a pet (never hatched one) starts with an empty roster', () => {
