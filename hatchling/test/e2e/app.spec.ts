@@ -303,7 +303,7 @@ test.describe.serial('Hatchling', () => {
     const overlay = await windowBy('overlay');
     const fps = () => overlay.evaluate(() => (window as unknown as { __test: { fps: () => number } }).__test.fps());
     await overlay.evaluate(() => (window as unknown as { __test: { pet: { sleepNow: () => void } } }).__test.pet.sleepNow());
-    await expect.poll(fps).toBe(8);
+    await expect.poll(fps).toBe(5);
     await app.evaluate(() => (global as unknown as { __hatchling: { sendOverlay: (c: string, p: unknown) => void } }).__hatchling.sendOverlay('hidden', true));
     await expect.poll(fps).toBe(1);
     await app.evaluate(() => (global as unknown as { __hatchling: { sendOverlay: (c: string, p: unknown) => void } }).__hatchling.sendOverlay('hidden', false));

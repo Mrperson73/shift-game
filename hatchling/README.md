@@ -2,7 +2,7 @@
 
 **A dinosaur that lives on your desktop and grows up with you.**
 
-Pick one of 12 eggs, click it on your taskbar, and a baby dinosaur hatches. It walks along your taskbar, climbs the sides of your windows and wanders along their tops. It dances, pounces on your cursor, chases butterflies, naps when you step away and roars when you launch a game. It grows from a big-headed hatchling to an adult over a few weeks of real use, and your progress is saved automatically.
+Pick one of 26 eggs (dinosaurs, flying pterosaurs and a giant crocodile), click it on your taskbar, and a baby dinosaur hatches. It walks along your taskbar, climbs the sides of your windows and wanders along their tops. It dances, pounces on your cursor, chases butterflies, naps when you step away and roars when you launch a game. It grows from a big-headed hatchling to an adult over a few weeks of real use, and your progress is saved automatically.
 
 The dinosaurs are drawn live with smooth, realistic body shapes (muscular legs, proper proportions), and hatchlings are big-eyed and cute. It runs fully offline and is built to stay open all day: it barely uses your CPU. No account, no internet, no tracking.
 
@@ -30,6 +30,20 @@ To uninstall, go to **Settings → Apps → Installed apps → Hatchling**. This
 | **Parasaur** (*Parasaurolophus*) | Friendly and LOUD | A long tube crest; honks like a trumpet |
 | **Galli** (*Gallimimus*) | Zero chill | Feathered, long-legged, the fastest runner; eats berries |
 | **Brachio** (*Brachiosaurus*) | A gentle giant | Four legs and a giraffe neck; lowers it to eat and lays it down to sleep |
+| **Allo** (*Allosaurus*) | Sleek and fearless | Little horns over its eyes; stomps and screeches |
+| **Therizino** (*Therizinosaurus*) | Fluffy and gentle | Pot-bellied and feathered, with the longest claws ever |
+| **Ptera** (*Pteranodon*) | A sky-high explorer | Flies over your windows on skin wings and dives for fish |
+| **Quetzal** (*Quetzalcoatlus*) | A towering stalker | As tall as a giraffe; stalks the taskbar, then takes to the sky |
+| **Diplo** (*Diplodocus*) | Long and calm | A whip of a tail it can crack |
+| **Styraco** (*Styracosaurus*) | A proud show-off | A frill crowned with long spikes and one big nose horn |
+| **Iguano** (*Iguanodon*) | Strong and steady | Spiky thumbs, a horse-like face |
+| **Compy** (*Compsognathus*) | Tiny and never still | Fuzzy, chittering, gets into everything |
+| **Ovi** (*Oviraptor*) | A feathery sweetheart | A parrot beak and a tall crest; loves berries |
+| **Kentro** (*Kentrosaurus*) | Small and prickly | Plates up front, long spikes behind |
+| **Amarga** (*Amargasaurus*) | A spiny show-off | Two rows of tall spines down its neck |
+| **Corytho** (*Corythosaurus*) | A booming trumpeter | A duck bill and a helmet crest |
+| **Micro** (*Microraptor*) | A shimmering glider | Four feathered wings; climbs up high and swoops down |
+| **Deino** (*Deinosuchus*) | A patient ambusher | A crocodile as long as a bus; basks with its jaws open and does death rolls |
 
 **Colours.** Every species has six colour schemes, from natural camouflage to albino and neon, with stripes, bands, spots, rosettes, speckles or a saddle. About 1 egg in 20 hatches **shiny**: rare colours and sparkles. You can recolour your pet any time from its card, including picking every colour by hand.
 
@@ -46,7 +60,7 @@ To uninstall, go to **Settings → Apps → Installed apps → Hatchling**. This
 **Reacting to you.**
 
 - It falls asleep when you're away for 5 minutes or lock your PC, and stretches and greets you when you're back.
-- When **The Isle**, **Brawlhalla** or **Minecraft** starts, it roars and wishes you luck. When the game closes, it welcomes you back.
+- When **any game** starts (about 200 known games, plus anything installed through Steam, Epic, Riot, Battle.net, GOG, Ubisoft, EA, Xbox or Roblox, or running full screen), it cheers using the game's name. When the game closes, it says GG. While you watch a video (YouTube, Twitch, Netflix, video players...), it sometimes sits down and watches along. Titles are only read on your PC and never saved.
 - It stays visible all the time, even over full-screen apps. If you'd rather it hid while a full-screen game or video is in front, turn on **Settings → Hide during full-screen apps**.
 
 ## Things you can do
@@ -65,7 +79,7 @@ To uninstall, go to **Settings → Apps → Installed apps → Hatchling**. This
 
 - Size (small, medium, large) and energy level (calm, normal, lively)
 - Growth speed: 1×, 2×, 5× or 10× as fast as normal
-- Sounds and volume. Every species has its own voice (roars, screeches, honks, bellows, hoots or trills), synthesized live and deeper as it grows.
+- Sounds and volume. Every species has its own voice (roars, screeches, honks, bellows, hoots, trills, chitters, croaks, rumbles, grunts or coos) with several variations of every call, synthesized live and deeper as it grows.
 - Speech: off, emotes only (hearts, zzz, !), or chatty (short lines)
 - Climb and walk on windows. When this is off, it stays on the taskbar.
 - Hide during full-screen apps (off by default), react to games and videos, start with Windows
@@ -85,7 +99,7 @@ A species starts from any built-in species (two- or four-legged) and can change:
 
 Hatchling reloads the folder when files change, and new species appear as eggs. Species files are data only and can't run code. A broken file shows a clear error in Settings instead of crashing anything.
 
-Tip: give an AI the `README.txt` from that folder and ask for "a Hatchling species JSON for an Allosaurus".
+Tip: give an AI the `README.txt` from that folder and ask for "a Hatchling species JSON for a Giganotosaurus".
 
 ## Privacy and safety
 

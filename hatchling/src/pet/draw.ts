@@ -284,6 +284,8 @@ export interface DrawOpts {
   shadow?: boolean;
   /** Height of the feet above the platform, in screen pixels (shrinks the shadow). */
   airborne?: number;
+  /** Moving fast: leave out fine detail (skin texture, shading on the legs) nobody could see. */
+  fast?: boolean;
 }
 
 /**
@@ -298,7 +300,7 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
   const grown = 1 - r.baby;
   const display = clamp(r.pose.display, 0, 1);
   // Fine detail (skin texture) only where it can be seen: not on tiny hatchlings.
-  const fine = sc >= 0.6;
+  const fine = sc >= 0.6 && !opts.fast;
   // Winged species: four-legged ones (pterosaurs) fly with their arms; two-legged ones spread them.
   const winged = !!f.wings;
   const flying = winged && r.pose.fly > 0.4;
@@ -453,10 +455,12 @@ export function drawPet(ctx: Ctx, r: Rig, pal: Palette, features: Features, opts
     outlineOf(lm.all);
     ctx.restore();
     fill(lm.all, color);
-    ctx.save();
-    ctx.clip(lm.all);
-    formShade(ctx, lm.all, bb, w * 0.3, 'rgba(28, 14, 48, 0.16)', 'rgba(255, 255, 255, 0.1)', -w * 0.22);
-    ctx.restore();
+    if (!opts.fast) {
+      ctx.save();
+      ctx.clip(lm.all);
+      formShade(ctx, lm.all, bb, w * 0.3, 'rgba(28, 14, 48, 0.16)', 'rgba(255, 255, 255, 0.1)', -w * 0.22);
+      ctx.restore();
+    }
     // The muscle line: only on the lower part, fading into the body above the joint.
     ctx.save();
     ctx.clip(body);

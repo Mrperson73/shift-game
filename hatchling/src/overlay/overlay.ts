@@ -308,7 +308,8 @@ function draw(h: Host) {
     // Squash and stretch around the feet.
     if (Math.abs(h.squash) > 0.002) ctx.scale(1 + h.squash * 0.55, 1 - h.squash);
     const outline = Math.min(2.4, Math.max(1.3, 1.6 * pet.px));
-    drawPet(ctx, pet.rig, h.pal, speciesOf(pet.data.species).features, { scale: pet.px, outline, shadow: pet.grounded && pet.rot === 0 });
+    // On the move, fine skin detail can't be seen anyway.
+    drawPet(ctx, pet.rig, h.pal, speciesOf(pet.data.species).features, { scale: pet.px, outline, shadow: pet.grounded && pet.rot === 0, fast: fpsOf(h) >= 30 && !CALM.has(pet.act.k) });
   }
   ctx.restore();
   h.canvas.style.transform = `translate(${pet.x - h.canvasW / 2}px, ${pet.y - h.canvasFeet}px)`;
@@ -567,8 +568,9 @@ function need(h: Host) {
   const speed = Math.abs(pet.vx);
   if (speed > pet.walkSpeed * 1.25 || pet.rig.run > 0.5) return 60;
   if (speed > 1 || WALK.has(pet.act.k)) return 30;
-  if (pet.asleep) return pet.settling ? 30 : 8;
-  if (CALM.has(pet.act.k)) return hover === h || (cursor && nearPet(h, cursor)) ? 30 : 15;
+  // Breathing and blinking look the same at 12 (idle) or 5 (asleep) frames a second.
+  if (pet.asleep) return pet.settling ? 30 : 5;
+  if (CALM.has(pet.act.k)) return hover === h || (cursor && nearPet(h, cursor)) ? 30 : 12;
   return 30;
 }
 
@@ -576,7 +578,7 @@ function need(h: Host) {
 function fpsOf(h: Host) {
   if (hidden || locked) return 1;
   const f = need(h);
-  return settings.power === 'smooth' ? 60 : settings.power === 'saver' ? Math.max(4, f / 2) : f;
+  return settings.power === 'smooth' ? Math.min(60, f * 2) : settings.power === 'saver' ? Math.max(4, f / 2) : f;
 }
 
 /** The busiest dino's frame rate: what the loop runs at. */
