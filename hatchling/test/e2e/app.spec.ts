@@ -37,12 +37,13 @@ const petNow = (overlay: Page) => overlay.evaluate(() => {
   return { data: p.data as { name: string; species: string; stats: Record<string, number>; hatchedAt: number | null }, act: p.act.k, hatched: p.hatched, x: p.x, y: p.y, grounded: p.grounded, foods: p.foods.length };
 });
 
-/** Every dino on an overlay (its monitor), bottom to top. */
+/** Every dino on an overlay (its monitor), bottom to top; none until the overlay has started. */
 type PetInfo = { id: string; name: string; act: string; hatched: boolean; x: number; y: number; foods: number; ball: boolean; energy: number; hunger: number };
 const petsOn = (overlay: Page): Promise<PetInfo[]> =>
   overlay.evaluate(() => {
     type P = { data: { id: string; name: string; energy: number; hunger: number }; act: { k: string }; hatched: boolean; x: number; y: number; foods: unknown[]; ball: unknown };
-    return (window as unknown as { __test: { pets: () => P[] } }).__test.pets().map((p) => ({ id: p.data.id, name: p.data.name, act: p.act.k, hatched: p.hatched, x: p.x, y: p.y, foods: p.foods.length, ball: !!p.ball, energy: p.data.energy, hunger: p.data.hunger }));
+    const pets = (window as unknown as { __test?: { pets: () => P[] } }).__test?.pets() ?? [];
+    return pets.map((p) => ({ id: p.data.id, name: p.data.name, act: p.act.k, hatched: p.hatched, x: p.x, y: p.y, foods: p.foods.length, ball: !!p.ball, energy: p.data.energy, hunger: p.data.hunger }));
   });
 const names = async (overlay: Page) => (await petsOn(overlay)).map((p) => p.name);
 /** The overlays by monitor id (one per monitor with dinos on it). */
