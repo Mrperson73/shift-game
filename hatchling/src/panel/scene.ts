@@ -340,8 +340,34 @@ export class Scene {
         this.set('shake', 1.5, () => this.set('idle', 1));
         break;
       case 'sparkle':
+      case 'treat':
         this.burst('spark', this.x, land.groundY - this.petHeight() * 0.55, 12, '#fff3a8');
         this.cheer(1.2);
+        break;
+      case 'jump':
+        this.set('happy', 1.6);
+        this.burst('dust', this.x, land.groundY - 4, 5, '#ffffff');
+        break;
+      case 'bow':
+        this.set('sniff', 1.2, () => this.cheer(1));
+        break;
+      case 'playdead':
+        this.set('nap', 2.6, () => this.set('stretch', 1.2, () => this.cheer(1)));
+        break;
+      case 'special':
+        this.set('roar', 1.5, () => this.cheer(1));
+        this.burst('bang', this.headX(), this.headY(), 7, '#ffffff');
+        break;
+      case 'ball':
+        this.react('play');
+        break;
+      case 'bubbles':
+      case 'bone':
+      case 'duck':
+      case 'laser':
+      case 'puddle':
+        this.burst('note', this.headX(), this.headY(), 3, '#7cc6ff');
+        this.cheer(1.4);
         break;
     }
   }

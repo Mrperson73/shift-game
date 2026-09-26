@@ -17,11 +17,15 @@ import {
   applyUpdate,
   choosing,
   colourPreview,
+  displays,
   hasPet,
   history,
   info,
+  out,
   pet,
   problems,
+  roster,
+  selected,
   settings,
   setView,
   species,
@@ -37,6 +41,7 @@ import { logo } from './thumbs';
 import { clearToasts, Habitat, Toasts, toast } from './ui';
 import { Choose } from './views/choose';
 import { ColoursView } from './views/colours';
+import { DinosView } from './views/dinos';
 import { PetView } from './views/pet';
 import { SettingsView } from './views/settings';
 
@@ -67,6 +72,7 @@ function TitleBar() {
 const TAB_INFO: Record<Tab, { label: string; icon: IconName }> = {
   pet: { label: 'Pet', icon: 'footprint' },
   colours: { label: 'Colours', icon: 'palette' },
+  dinos: { label: 'Dinos', icon: 'dino' },
   settings: { label: 'Settings', icon: 'gear' },
 };
 
@@ -94,7 +100,7 @@ function Tabs() {
   };
   return (
     <nav class="tabs" aria-label="Sections">
-      <div class="tabs-list" role="tablist" aria-label="Sections" style={{ '--i': idx }}>
+      <div class="tabs-list" role="tablist" aria-label="Sections" style={{ '--i': idx, '--n': TABS.length }}>
         <span class="tabs-pill" aria-hidden="true" />
         {TABS.map((id) => (
           <button
@@ -138,11 +144,12 @@ function PetHabitat() {
   const p = pet.value!;
   const sp = speciesOf(p.species);
   const t = tab.value;
+  const folded = t === 'settings' || t === 'dinos';
   return (
-    <div class={`habitat-wrap ${t === 'settings' ? 'folded' : ''}`}>
+    <div class={`habitat-wrap ${folded ? 'folded' : ''}`}>
       <Habitat
         subject={petSubject}
-        active={t !== 'settings'}
+        active={!folded}
         label={p.hatchedAt === null ? `${p.name}'s egg in its nest` : `${p.name} the ${sp.name} in its habitat. Click it to say hi.`}
         onPet={() => sfx.call(speciesOf(pet.value!.species).voice, growthOf(pet.value!.activeSeconds))}
         onEgg={() => sfx.play('click')}
@@ -175,7 +182,7 @@ function Main() {
       <PetHabitat />
       <main id="view" ref={scroller} class="content" role="tabpanel" aria-labelledby={`tab-${t}`}>
         <div key={t} class={`view view-${t} ${t === lastTab ? '' : dir}`}>
-          {t === 'pet' ? <PetView /> : t === 'colours' ? <ColoursView /> : <SettingsView />}
+          {t === 'pet' ? <PetView /> : t === 'colours' ? <ColoursView /> : t === 'dinos' ? <DinosView /> : <SettingsView />}
         </div>
       </main>
       <Toasts />
@@ -233,6 +240,10 @@ void api.init().then((i) => {
     history.value = i.history ?? [];
     systemDark.value = !!i.systemDark;
     pet.value = i.pet;
+    roster.value = i.roster ?? [];
+    out.value = i.out ?? [];
+    selected.value = i.selected;
+    displays.value = i.displays ?? [];
     settings.value = i.settings;
     setView(i.pet ? i.view : 'choose');
   });

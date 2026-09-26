@@ -13,6 +13,20 @@ const NAMES: Record<string, string[]> = {
   parasaur: ['Toot', 'Honk', 'Tuba', 'Melody', 'Crest', 'Echo', 'Banjo', 'Kazoo', 'Piper', 'Harmony'],
   galli: ['Dash', 'Zoom', 'Pip', 'Flick', 'Road', 'Skippy', 'Twitch', 'Nimble', 'Pecky', 'Breeze'],
   brachio: ['Longneck', 'Treetop', 'Gentle', 'Skyler', 'Willow', 'Bertha', 'Stretch', 'Atlas', 'Cloud', 'Maple'],
+  allo: ['Big Al', 'Jaws', 'Rusty', 'Ridge', 'Alby', 'Fang', 'Hunter', 'Blaze', 'Allie', 'Cinder'],
+  therizino: ['Edward', 'Scissors', 'Claws', 'Fluffy', 'Rake', 'Sickle', 'Shears', 'Tickles', 'Garden', 'Wolverine'],
+  ptera: ['Swoop', 'Sky', 'Glider', 'Kite', 'Pip', 'Breezy', 'Soar', 'Flappy', 'Pelican', 'Aero'],
+  quetzal: ['Quetzy', 'Giraffe', 'Zephyr', 'Condor', 'Stilts', 'Skyscraper', 'Zeppelin', 'Hawk', 'Monarch', 'Lofty'],
+  diplo: ['Whiplash', 'Dippy', 'Noodle', 'Longtail', 'Ribbon', 'Slinky', 'Diplo', 'Lasso', 'Twiggy', 'Meadow'],
+  styraco: ['Spikes', 'Crown', 'Halo', 'Styx', 'Thorn', 'Punk', 'Duchess', 'Pincushion', 'Horny', 'Sunny'],
+  iguano: ['Thumbs', 'Iggy', 'Guano', 'Spike', 'Mossy', 'Bramble', 'Thumbelina', 'Iggo', 'Nobby', 'Hazel'],
+  compy: ['Tiny', 'Peep', 'Nibbles', 'Compy', 'Squeak', 'Bean', 'Scamper', 'Crumb', 'Pocket', 'Zippy'],
+  ovi: ['Eggbert', 'Beaky', 'Ovi', 'Nest', 'Pecky', 'Omelette', 'Hen', 'Sunny', 'Robin', 'Custard'],
+  kentro: ['Pointy', 'Kent', 'Prickles', 'Quill', 'Cactus', 'Thistle', 'Needles', 'Porky', 'Spindle', 'Burr'],
+  amarga: ['Sails', 'Amara', 'Zipper', 'Comb', 'Fins', 'Picket', 'Sierra', 'Spines', 'Harp', 'Mohawk'],
+  corytho: ['Helmet', 'Cory', 'Casque', 'Hoot', 'Bonnet', 'Crested', 'Bugle', 'Melody', 'Cassie', 'Honker'],
+  micro: ['Zip', 'Flutter', 'Glimmer', 'Micro', 'Pixel', 'Wisp', 'Sparky', 'Midge', 'Raven', 'Glide'],
+  deino: ['Chomps', 'Snappy', 'Gator', 'Tick-Tock', 'Deino', 'Marsh', 'Bubbles', 'Log', 'Grinner', 'Swampy'],
 };
 
 const GENERIC = ['Hatch', 'Pebble', 'Scales', 'Mochi', 'Biscuit', 'Nova', 'Sunny', 'Ziggy', 'Tater', 'Olive'];

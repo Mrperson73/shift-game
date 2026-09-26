@@ -1255,8 +1255,94 @@ p {
 }
 .tricks {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
+}
+/* treat and special move */
+.extras {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+.extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px 0 5px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font: 600 13.5px/1 var(--font-fun);
+  cursor: pointer;
+  box-shadow: 0 3px 0 var(--line);
+  transition:
+    transform 0.3s var(--spring),
+    box-shadow 0.2s,
+    background-color 0.2s;
+}
+.extra:hover {
+  transform: translateY(-2px);
+  background: var(--card-3);
+  box-shadow: 0 5px 0 var(--line);
+}
+.extra:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--line);
+  transition-duration: 0.06s;
+}
+.extra-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  color: var(--ti, #fff);
+  background: linear-gradient(160deg, var(--t1), var(--t2));
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 0.35),
+    0 2px 0 var(--t3);
+}
+.extra.pop .extra-icon,
+.toy.pop {
+  animation: boing 0.6s var(--spring);
+}
+/* toys */
+.toys {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+.toy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 2px 7px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--card-2);
+  color: var(--accent-ink);
+  cursor: pointer;
+  transition:
+    transform 0.3s var(--spring),
+    background-color 0.2s,
+    border-color 0.2s;
+}
+.toy:hover {
+  transform: translateY(-2px);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.toy-name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font: 600 11px/1.1 var(--font-fun);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .trick {
   position: relative;
@@ -1548,6 +1634,229 @@ p {
 }
 .tips .icon {
   margin-top: 1px;
+}
+
+/* switching between dinos */
+.switcher {
+  display: flex;
+  gap: 6px;
+  margin: -4px -8px 12px -4px;
+  padding: 2px 8px 6px 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.switch-dino {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 62px;
+  padding: 5px 3px 6px;
+  border-radius: 14px;
+  border: 2px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--line);
+  transition:
+    transform 0.3s var(--spring),
+    border-color 0.2s,
+    background-color 0.2s,
+    opacity 0.2s;
+}
+.switch-dino img {
+  display: block;
+}
+.switch-dino:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+.switch-dino.on {
+  border-color: var(--accent);
+  background: radial-gradient(90% 70% at 50% 35%, var(--card), var(--accent-soft));
+  box-shadow: 0 2px 0 var(--accent-deep);
+}
+.switch-dino.away:not(.on) {
+  opacity: 0.62;
+}
+.switch-name {
+  max-width: 100%;
+  overflow: hidden;
+  font: 600 11.5px/1.15 var(--font-fun);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a dino that's put away */
+.resting-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: radial-gradient(110% 90% at 0% 0%, var(--accent-soft), var(--card) 70%);
+}
+.resting-art {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--accent-ink);
+  box-shadow: 0 3px 0 var(--line);
+}
+.resting-text h2 {
+  margin-bottom: 4px;
+  font: 600 17px/1.2 var(--font-fun);
+}
+.resting-text p {
+  margin-bottom: 12px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+/* ---------------- my dinos ---------------- */
+
+.dinos-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.dinos-head .btn {
+  flex: none;
+  margin-top: 4px;
+}
+.dinos {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dino {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 8px 6px 6px;
+  border-radius: 16px;
+  border: 2px solid transparent;
+  background: var(--card-2);
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
+}
+.dino.on {
+  border-color: var(--accent);
+  background: radial-gradient(90% 90% at 0% 50%, var(--accent-soft), var(--card-2) 75%);
+}
+.dino-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dino-img {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 52px;
+  border-radius: 12px;
+  background: var(--card);
+  transition: transform 0.3s var(--spring);
+}
+.dino-main:hover .dino-img {
+  transform: translateY(-2px) rotate(-3deg);
+}
+.dino.is-away .dino-img img {
+  filter: saturate(0.55);
+  opacity: 0.8;
+}
+.dino-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.dino-text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dino-text strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+  font: 600 15px/1.25 var(--font-fun);
+}
+.dino-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 700 11px/1.5 var(--font-body);
+}
+.dino-state i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+.dino-state.out {
+  color: var(--good);
+}
+.dino-state.out i {
+  background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent);
+}
+.dino-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+.dino-actions .btn.small {
+  height: 30px;
+  padding: 0 10px;
+}
+.select-wrap.small select {
+  max-width: 150px;
+  height: 28px;
+  padding: 0 26px 0 9px;
+  border-radius: 10px;
+  font-size: 11.5px;
+}
+.select-wrap.small::after {
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  margin-top: -5px;
+}
+.dino.confirming {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+  animation: nudge 0.45s var(--ease);
+}
+.dino-confirm {
+  grid-column: 1 / -1;
+  padding: 4px 4px 2px;
+  animation: rise 0.35s var(--ease) both;
+}
+.dinos-empty {
+  margin: 0;
+}
+.dinos-count {
+  margin: 0 0 12px;
 }
 
 /* ---------------- colours ---------------- */
@@ -2097,10 +2406,6 @@ p {
 .mods-bad li b {
   color: var(--danger);
 }
-.new-egg.confirming {
-  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
-  animation: nudge 0.45s var(--ease);
-}
 .confirm .card-text {
   margin-top: -4px;
 }
@@ -2146,9 +2451,9 @@ p {
 .tabs-list {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(var(--n, 3), 1fr);
   width: 100%;
-  max-width: 360px;
+  max-width: 420px;
   padding: 4px;
   border-radius: 16px;
   background: color-mix(in srgb, var(--bar-ink) 7%, transparent);
@@ -2159,7 +2464,7 @@ p {
   top: 4px;
   bottom: 4px;
   left: 4px;
-  width: calc((100% - 8px) / 3);
+  width: calc((100% - 8px) / var(--n, 3));
   border-radius: 12px;
   background: var(--card);
   box-shadow:
@@ -2373,6 +2678,87 @@ p {
 .egg-diet.herbivore {
   background: #dcf3d2;
   color: #3a7a20;
+}
+.egg-diet.flyer {
+  background: #dcecfb;
+  color: #2a5f96;
+}
+/* Filters above the egg shelf. */
+.egg-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.egg-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font: 600 12.5px/1 var(--font-fun);
+  cursor: pointer;
+  transition:
+    transform 0.3s var(--spring),
+    background-color 0.2s,
+    border-color 0.2s;
+}
+.egg-filter .icon {
+  color: var(--accent-ink);
+}
+.egg-filter:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+.egg-filter.on {
+  border-color: var(--accent-deep);
+  background: var(--accent-strong);
+  color: var(--on-accent);
+}
+.egg-filter.on .icon {
+  color: inherit;
+}
+.egg-filter-n {
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font: 800 10.5px/1.2 var(--font-body);
+}
+/* Lots of eggs: two rows that scroll sideways, so the preview stays close. */
+.eggs.scrolls {
+  grid-template-columns: none;
+  grid-template-rows: repeat(2, auto);
+  grid-auto-flow: column;
+  grid-auto-columns: 92px;
+  margin: 0 -8px 14px -4px;
+  padding: 4px 8px 10px 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding: 0 8px;
+  scrollbar-width: thin;
+}
+.eggs.scrolls .egg-tile {
+  scroll-snap-align: start;
+}
+.choose-note {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.choose-note .icon {
+  flex: none;
+  color: var(--accent-ink);
+}
+.choose-note.bad .icon {
+  color: var(--danger);
 }
 .egg-mod {
   position: absolute;
@@ -2635,6 +3021,7 @@ p {
   z-index: 5;
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 12px 16px 14px;
   border-top: 1px solid var(--line);

@@ -1,12 +1,12 @@
-// Settings: the pet, sound, the desktop, the panel's theme, custom species and starting over.
+// Settings: your dinos, sound, the desktop and monitors, power, the panel's theme, custom species
+// and hatching another egg.
 
-import { useState } from 'preact/hooks';
 import { mix } from '../../pet/draw';
 import { resolveTheme, type Theme, THEME_IDS, type ThemeId } from '../../shared/themes';
-import type { Settings } from '../../shared/types';
+import { type GrowthSpeed, type PowerSetting, ROSTER_MAX, type Settings } from '../../shared/types';
 import { Icon } from '../icons';
 import { sfx } from '../sfx';
-import { api, growth, info, pet, problems, settings, species, speciesOf, updateSettings } from '../state';
+import { api, displays, growth, info, pet, problems, roster, settings, species, speciesOf, updateSettings } from '../state';
 import { BIOMES, setThemeOrigin } from '../theme';
 import { radioKeys, Segmented, SettingRow, Slider, SwitchRow } from '../ui';
 
@@ -92,12 +92,18 @@ function ThemePicker(props: { value: ThemeId; onPick: (id: ThemeId, el: HTMLElem
   );
 }
 
+const POWER_HINT: Record<PowerSetting, string> = {
+  saver: 'Smooth enough, and easiest on your battery.',
+  balanced: 'Smooth when they move, calm when they rest.',
+  smooth: 'Always the smoothest animation. Uses more power.',
+};
+
 export function SettingsView() {
   const s = settings.value!;
   const i = info.value!;
   const p = pet.value;
-  const [confirmNew, setConfirmNew] = useState(false);
   const mods = species.value.filter((x) => x.mod);
+  const full = roster.value.length >= ROSTER_MAX;
   const set = (patch: Partial<Settings>) => updateSettings(patch);
   return (
     <>
@@ -109,7 +115,7 @@ export function SettingsView() {
       <section class="card settings-card">
         <h2 class="card-title">
           <Icon name="footprint" size={18} />
-          Your pet
+          Your dinos
         </h2>
         <SettingRow label="Size" hint="On your desktop">
           <Segmented label="Size" value={s.size} options={[['S', 'Small'], ['M', 'Medium'], ['L', 'Large']]} onChange={(size) => set({ size })} />
@@ -119,6 +125,19 @@ export function SettingsView() {
         </SettingRow>
         <SettingRow label="Speech" hint="Bubbles and emotes">
           <Segmented label="Speech" value={s.speech} options={[['off', 'Off'], ['emotes', 'Emotes'], ['chatty', 'Chatty']]} onChange={(speech) => set({ speech })} />
+        </SettingRow>
+        <SettingRow label="Growth" hint={s.growthSpeed === 1 ? 'Grown up in about 60 hours together' : `Grown up in about ${Math.round(60 / s.growthSpeed)} hours together`}>
+          <Segmented
+            label="Growth speed"
+            value={String(s.growthSpeed) as `${GrowthSpeed}`}
+            options={[
+              ['1', '1×'],
+              ['2', '2×'],
+              ['5', '5×'],
+              ['10', '10×'],
+            ]}
+            onChange={(v) => set({ growthSpeed: Number(v) as GrowthSpeed })}
+          />
         </SettingRow>
       </section>
 
@@ -152,10 +171,11 @@ export function SettingsView() {
           Desktop
         </h2>
         <SwitchRow label="Climb and walk on windows" hint="Otherwise it stays on the taskbar." checked={s.explore} onChange={(explore) => set({ explore })} />
-        <SwitchRow label="Hide during full-screen apps" hint="Off: your pet is always visible" checked={s.hideFullscreen} onChange={(hideFullscreen) => set({ hideFullscreen })} />
+        <SwitchRow label="Hide during full-screen apps" hint="Off: your dinos are always visible" checked={s.hideFullscreen} onChange={(hideFullscreen) => set({ hideFullscreen })} />
         <SwitchRow label="React to games" hint="The Isle, Brawlhalla and Minecraft." checked={s.gameReactions} onChange={(gameReactions) => set({ gameReactions })} />
-        <SwitchRow label="Start with Windows" hint="Your pet is there when you log in." checked={s.startWithWindows} onChange={(startWithWindows) => set({ startWithWindows })} />
-        {i.displays.length > 1 && (
+        <SwitchRow label="React to videos" hint="They watch along when you play a video." checked={s.videoReactions} onChange={(videoReactions) => set({ videoReactions })} />
+        <SwitchRow label="Start with Windows" hint="Your dinos are there when you log in." checked={s.startWithWindows} onChange={(startWithWindows) => set({ startWithWindows })} />
+        {displays.value.length > 1 && (
           <SettingRow label="Monitors" hint={s.monitors === 'all' ? 'They walk from one screen to the next' : 'They all stay on your main screen'}>
             <Segmented
               label="Monitors"
@@ -168,6 +188,25 @@ export function SettingsView() {
             />
           </SettingRow>
         )}
+      </section>
+
+      <section class="card settings-card">
+        <h2 class="card-title">
+          <Icon name="battery" size={18} />
+          Power
+        </h2>
+        <SettingRow label="Animation" hint={POWER_HINT[s.power]}>
+          <Segmented
+            label="Power"
+            value={s.power}
+            options={[
+              ['saver', 'Saver'],
+              ['balanced', 'Balanced'],
+              ['smooth', 'Smooth'],
+            ]}
+            onChange={(power) => set({ power })}
+          />
+        </SettingRow>
       </section>
 
       <section class="card settings-card">
@@ -221,56 +260,26 @@ export function SettingsView() {
       </section>
 
       {p && (
-        <section class={`card settings-card new-egg ${confirmNew ? 'confirming' : ''}`}>
+        <section class="card settings-card new-egg">
           <h2 class="card-title">
             <Icon name="egg" size={18} />
-            New egg
+            Another egg
           </h2>
-          {confirmNew ? (
-            <div class="confirm" role="alertdialog" aria-label="Start over with a new egg?">
-              <p class="card-text">
-                <b>Start over with a new egg?</b> {p.name} will be remembered in your past pets, but you can't bring them back.
-              </p>
-              <div class="btn-row">
-                <button
-                  type="button"
-                  class="btn ghost"
-                  autoFocus
-                  onClick={() => {
-                    sfx.play('click');
-                    setConfirmNew(false);
-                  }}
-                >
-                  Keep {p.name}
-                </button>
-                <button
-                  type="button"
-                  class="btn danger"
-                  onClick={() => {
-                    sfx.play('click');
-                    void api.newEgg();
-                  }}
-                >
-                  Choose a new egg
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <p class="card-text">Ready for a new friend? You can hatch a different egg at any time.</p>
-              <button
-                type="button"
-                class="btn"
-                onClick={() => {
-                  sfx.play('open');
-                  setConfirmNew(true);
-                }}
-              >
-                <Icon name="eggCrack" size={18} />
-                Hatch a new egg…
-              </button>
-            </>
-          )}
+          <p class="card-text">
+            {full ? `You have ${ROSTER_MAX} dinos, the most you can keep. Release one in My Dinos to make room.` : 'Every egg you hatch joins My Dinos: nobody is replaced.'}
+          </p>
+          <button
+            type="button"
+            class="btn"
+            disabled={full}
+            onClick={() => {
+              sfx.play('open');
+              void api.newEgg();
+            }}
+          >
+            <Icon name="eggCrack" size={18} />
+            Hatch a new egg…
+          </button>
         </section>
       )}
 
