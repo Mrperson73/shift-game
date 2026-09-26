@@ -13,6 +13,7 @@ import { type Env, Pet, type SimEvent } from '../sim/pet';
 import { ground } from '../sim/world';
 import { ballSprite, butterflyEl, foodSprite, Fx } from './fx';
 import { Sounds } from './sound';
+import { ToyLayer } from './toys';
 
 const api = window.hatch;
 const stage = document.getElementById('stage')!;
@@ -21,6 +22,7 @@ const sounds = new Sounds();
 const canvas = document.createElement('canvas');
 stage.appendChild(canvas);
 const ctx = canvas.getContext('2d')!;
+const toys = new ToyLayer(stage);
 
 window.addEventListener('error', (e) => api.error(`${e.message} (${e.filename?.split('/').pop()}:${e.lineno})`));
 window.addEventListener('unhandledrejection', (e) => api.error(String((e as PromiseRejectionEvent).reason)));
@@ -34,7 +36,7 @@ let locked = false;
 let cursor: { x: number; y: number } | null = null;
 let captured = false;
 let down: { x: number; y: number; t: number } | null = null;
-let dragging: 'pet' | 'ball' | null = null;
+let dragging: 'pet' | 'ball' | 'toy' | null = null;
 let frames = 0;
 let canvasW = 0;
 let canvasH = 0;
@@ -79,6 +81,7 @@ function makePet(data: PetData, width: number, height: number) {
   paletteForPet();
   voice();
   fx.clear();
+  toys.clear();
   dirty = true;
 }
 
@@ -90,7 +93,7 @@ function resizeCanvas() {
   const p = pet.rig.p;
   const ext = pet.hatched ? (p.tailLen + p.bodyLen + p.neckLen + p.headLen + p.hipHeight * 0.4) * pet.px : pet.eggSize * 1.4;
   const w = Math.ceil(ext * 2 + 24);
-  const tall = !pet.hatched || pet.rot !== 0 || pet.held;
+  const tall = !pet.hatched || pet.rot !== 0 || pet.held || pet.flying;
   const below = tall ? ext + 12 : Math.ceil(ext * 0.15 + 12);
   const h = Math.ceil(ext + 12 + below);
   if (Math.abs(w - canvasW) < 2 && Math.abs(h - canvasH) < 2) return;
@@ -137,8 +140,8 @@ function drawSprites() {
   for (const f of pet.foods) {
     let el = foodEls.get(f.id);
     if (!el) {
-      el = foodSprite(f.kind, size);
-      el.className = 'sprite';
+      el = foodSprite(f.golden ? 'treat' : f.kind, size);
+      el.className = f.golden ? 'sprite golden' : 'sprite';
       stage.appendChild(el);
       foodEls.set(f.id, el);
     }
@@ -174,6 +177,7 @@ function drawSprites() {
     flyEl = null;
   }
   if (fly && flyEl) flyEl.style.transform = `translate(${fly.x - 13}px, ${fly.y - 11}px) scaleX(${fly.vx < 0 ? -1 : 1}) rotate(${Math.max(-0.5, Math.min(0.5, fly.vy / 400))}rad)`;
+  toys.sync(pet);
   if (shell && performance.now() > shell.until) {
     shell.el.remove();
     shell = null;
@@ -240,6 +244,9 @@ function handle(events: SimEvent[]) {
         fx.burst(c.x, c.y, Math.max(0.8, pet.px * 1.6));
         break;
       }
+      case 'fx':
+        fx.effect(e.kind, e.x, e.y, e.dir ?? 1, e.scale ?? Math.max(0.6, pet.px));
+        break;
       case 'hatched':
         pop = 0;
         leaveShell();
@@ -266,7 +273,8 @@ function status() {
   const d = pet.data;
   if (!pet.hatched) return `${d.name} · egg`;
   const g = pet.growth;
-  const doing = pet.asleep ? 'sleeping' : pet.act.k === 'eat' ? 'eating' : pet.act.k === 'climb' ? 'climbing' : pet.act.k === 'dance' ? 'dancing' : '';
+  const k = pet.act.k;
+  const doing = pet.asleep ? 'sleeping' : k === 'eat' ? 'eating' : k === 'climb' || k === 'cling' ? 'climbing' : k === 'dance' ? 'dancing' : k === 'fly' ? 'flying' : k === 'toy' ? 'playing' : k === 'watchVideo' ? 'watching' : '';
   return `${d.name} · ${stageName(stageOf(g))} ${Math.floor(g * 100)}%${doing ? ` · ${doing}` : ''}`;
 }
 
@@ -351,9 +359,11 @@ function loop() {
 }
 
 /** Fast motion that needs smooth frames. Walking is fine at 30 fps; running and jumping aren't. */
-const FAST = new Set(['jump', 'fall', 'move', 'climb', 'land', 'held', 'chase', 'zoomies', 'tail', 'hatch', 'pounce', 'hop']);
-const WALK = new Set(['walk', 'travel', 'follow', 'hunt', 'shake', 'dizzy', 'dance', 'paw']);
-const CALM = new Set(['idle', 'sit', 'lie', 'watch', 'wake', 'gaze', 'stretch']);
+const FAST = new Set(['jump', 'fall', 'move', 'climb', 'land', 'held', 'chase', 'zoomies', 'tail', 'hatch', 'pounce', 'hop', 'fly', 'leap', 'tag']);
+const WALK = new Set(['walk', 'travel', 'follow', 'hunt', 'shake', 'dizzy', 'dance', 'paw', 'special', 'toy', 'fidget', 'forage', 'greet', 'roaroff', 'climbfun', 'cling', 'bow', 'playdead']);
+const CALM = new Set(['idle', 'sit', 'lie', 'watch', 'wake', 'gaze', 'stretch', 'perch', 'watchVideo']);
+/** Drawn rotated or off the ground but holding still (clinging to a wall, playing dead). */
+const STILL = new Set(['cling', 'playdead']);
 
 /** How often the pet needs to be redrawn right now. */
 function fps() {
@@ -362,12 +372,13 @@ function fps() {
   // Only things that actually move need smooth frames: a resting ball or food on the ground doesn't.
   const b = pet.ball;
   const ballMoving = !!b && (b.held || Math.abs(b.vx) > 1 || b.vy !== 0);
-  const effects = pet.foods.some((f) => !f.landed) || ballMoving || !!pet.butterfly || !!dragging || pop < 1 || squash !== 0;
-  if (effects || !pet.grounded || pet.rot !== 0 || FAST.has(pet.act.k)) return 60;
+  // pet.smooth: a fast part of a move, toys in motion.
+  const effects = pet.foods.some((f) => !f.landed) || ballMoving || !!pet.butterfly || !!dragging || pop < 1 || squash !== 0 || pet.smooth;
+  if (effects || ((!pet.grounded || pet.rot !== 0) && !STILL.has(pet.act.k)) || FAST.has(pet.act.k)) return 60;
   const speed = Math.abs(pet.vx);
   if (speed > pet.walkSpeed * 1.25 || pet.rig.run > 0.5) return 60;
   if (speed > 1 || WALK.has(pet.act.k)) return 30;
-  if (pet.asleep) return 8;
+  if (pet.asleep) return pet.settling ? 30 : 8;
   if (CALM.has(pet.act.k)) return captured || (cursor && nearPet(cursor)) ? 30 : 15;
   return 30;
 }
@@ -411,13 +422,14 @@ function nearPet(c: { x: number; y: number }) {
 
 function updateHover() {
   if (dragging || down) return;
-  setCapture(!!cursor && !hidden && !locked && ((nearPet(cursor) && pet.hitTest(cursor)) || overBall(cursor)));
+  setCapture(!!cursor && !hidden && !locked && ((nearPet(cursor) && pet.hitTest(cursor)) || overBall(cursor) || pet.overToy(cursor)));
 }
 
 /** Let go of whatever is held (mouse released, focus lost, or a missed mouseup). */
 function endPointer(at?: { x: number; y: number }) {
   if (dragging === 'pet') pet.release();
   else if (dragging === 'ball') pet.releaseBall();
+  else if (dragging === 'toy') pet.releaseToy();
   dragging = null;
   down = null;
   document.body.classList.remove('dragging');
@@ -432,6 +444,7 @@ window.addEventListener('mousemove', (e) => {
   cursor = p;
   if (down && !dragging && Math.hypot(p.x - down.x, p.y - down.y) > 5) {
     if (overBall(down) && pet.grabBall(down)) dragging = 'ball';
+    else if (!pet.hitTest(down) && pet.grabToy(down)) dragging = 'toy';
     else {
       dragging = 'pet';
       pet.grab(down);
@@ -441,6 +454,7 @@ window.addEventListener('mousemove', (e) => {
   }
   if (dragging === 'pet') pet.drag(p);
   else if (dragging === 'ball') pet.dragBall(p);
+  else if (dragging === 'toy') pet.dragToy(p);
   else if (!down && prev && pet.hitTest(p)) pet.stroke(Math.hypot(p.x - prev.x, p.y - prev.y));
 });
 
@@ -464,9 +478,13 @@ window.addEventListener('pointercancel', () => endPointer());
 
 window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
-  const tap = !dragging && down && performance.now() - down.t < 450 && pet.hitTest(down);
+  const at = down;
+  const quick = !dragging && !!at && performance.now() - at.t < 450;
+  const tap = quick && pet.hitTest(at!);
+  const toyTap = quick && !tap && pet.overToy(at!);
   endPointer({ x: e.clientX, y: e.clientY });
   if (tap) pet.poke();
+  else if (toyTap) pet.tapToy(at!);
 });
 
 window.addEventListener('blur', () => endPointer());

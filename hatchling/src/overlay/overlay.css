@@ -213,3 +213,249 @@ body.dragging {
     animation-duration: 0.5s;
   }
 }
+
+/* ---------- 1.2: effects from moves and toys ---------- */
+.drop {
+  width: 4px;
+  height: 5px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: radial-gradient(circle at 35% 35%, #e8f7ff, #6cc2f5 60%, #2f86c9);
+}
+.clod {
+  border-radius: 40%;
+  background: #8a6440;
+  box-shadow: inset -1px -1px 0 rgba(0, 0, 0, 0.25);
+}
+.pop-ring,
+.ripple,
+.sound-ring,
+.shock,
+.flash {
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+}
+.pop-ring {
+  border: 2px solid rgba(220, 245, 255, 0.95);
+  animation: pop-ring 0.3s ease-out forwards;
+}
+@keyframes pop-ring {
+  from {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1.7);
+    opacity: 0;
+  }
+}
+.ripple {
+  border: 2px solid rgba(190, 235, 255, 0.9);
+  animation: ripple 0.9s ease-out forwards;
+}
+@keyframes ripple {
+  from {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1.8);
+    opacity: 0;
+  }
+}
+.sound-ring {
+  border: 3px solid rgba(255, 244, 200, 0.95);
+  box-shadow: 0 0 6px rgba(255, 230, 150, 0.6);
+}
+.shock {
+  border: 3px solid rgba(214, 200, 176, 0.9);
+  border-left-color: transparent;
+  border-right-color: transparent;
+  animation: shock 0.7s ease-out forwards;
+}
+@keyframes shock {
+  from {
+    transform: translate(-50%, -50%) scale(0.3, 0.6);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(3.2, 1.3);
+    opacity: 0;
+  }
+}
+.flash {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95), rgba(255, 240, 180, 0.5) 45%, transparent 70%);
+  animation: flash 0.35s ease-out forwards;
+}
+@keyframes flash {
+  from {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1.6);
+    opacity: 0;
+  }
+}
+.crack,
+.slash,
+.swoosh,
+.leaf,
+.feather,
+.find {
+  transform: translate(-50%, -50%);
+}
+.crack svg,
+.slash svg,
+.swoosh svg,
+.leaf svg,
+.feather svg,
+.find svg {
+  display: block;
+}
+.crack {
+  animation: crack 0.4s ease-out forwards;
+}
+@keyframes crack {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2) rotate(0deg);
+    opacity: 1;
+  }
+  40% {
+    transform: translate(-50%, -50%) scale(1.15) rotate(12deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.3) rotate(20deg);
+    opacity: 0;
+  }
+}
+.slash {
+  animation: slash 0.35s ease-out forwards;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.8));
+}
+@keyframes slash {
+  0% {
+    clip-path: inset(0 0 100% 0);
+    opacity: 1;
+  }
+  45% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 0;
+  }
+}
+.swoosh {
+  animation: swoosh 0.4s ease-out forwards;
+}
+@keyframes swoosh {
+  from {
+    opacity: 0.95;
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+
+/* ---------- 1.2: toys ---------- */
+.toy {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+/* A soap bubble: see-through, with an iridescent rim and a darker hairline so it shows up on light
+   and dark desktops alike. */
+.toy-bubble {
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.95) 0 10%, rgba(255, 255, 255, 0) 20%), radial-gradient(circle at 70% 74%, rgba(255, 255, 255, 0.5) 0 6%, rgba(255, 255, 255, 0) 12%),
+    radial-gradient(circle at 50% 50%, rgba(160, 220, 255, 0.12) 50%, rgba(190, 150, 255, 0.4) 72%, rgba(90, 190, 255, 0.8) 92%, rgba(60, 140, 220, 0.9) 100%);
+  box-shadow: 0 0 0 1px rgba(40, 110, 180, 0.35);
+}
+.toy-laser {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 18%, #ff2a2a 40%, rgba(255, 0, 0, 0) 72%);
+  box-shadow: 0 0 8px 3px rgba(255, 30, 30, 0.55);
+  animation: laser 0.25s ease-in-out infinite alternate;
+}
+@keyframes laser {
+  to {
+    opacity: 0.8;
+  }
+}
+.toy-puddle {
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 40% 35%, rgba(235, 250, 255, 0.9) 0 10%, rgba(120, 195, 240, 0.85) 30%, rgba(64, 140, 205, 0.85) 75%, rgba(40, 100, 170, 0.7));
+  box-shadow: inset 0 -2px 0 rgba(20, 60, 110, 0.35), 0 1px 0 rgba(255, 255, 255, 0.4);
+  overflow: hidden;
+}
+.toy-puddle .fish-shadow {
+  position: absolute;
+  top: 35%;
+  left: 20%;
+  width: 22%;
+  height: 30%;
+  border-radius: 50% 40% 40% 50%;
+  background: rgba(20, 50, 90, 0.35);
+  animation: swim 3.2s ease-in-out infinite alternate;
+}
+@keyframes swim {
+  from {
+    transform: translateX(0) scaleX(1);
+  }
+  48% {
+    transform: translateX(180%) scaleX(1);
+  }
+  52% {
+    transform: translateX(180%) scaleX(-1);
+  }
+  to {
+    transform: translateX(0) scaleX(-1);
+  }
+}
+.toy-gnat {
+  width: 6px;
+  height: 6px;
+}
+.toy-gnat::before {
+  content: '';
+  position: absolute;
+  left: 1.5px;
+  top: 2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #2a2230;
+}
+.toy-gnat::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -1px;
+  width: 6px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(230, 240, 255, 0.8);
+  animation: buzz 0.05s linear infinite alternate;
+}
+@keyframes buzz {
+  to {
+    transform: scaleY(0.2);
+  }
+}
+/* The golden growth treat glows (a static glow: an animated filter would repaint every frame). */
+.sprite.golden {
+  filter: drop-shadow(0 0 5px rgba(255, 215, 90, 0.95));
+}
+@media (prefers-reduced-motion: reduce) {
+  .toy-laser,
+  .toy-puddle .fish-shadow {
+    animation: none;
+  }
+}
