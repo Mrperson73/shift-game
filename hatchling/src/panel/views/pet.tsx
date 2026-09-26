@@ -323,6 +323,8 @@ const MOVE_ICON: Partial<Record<SignatureMove, IconName>> = {
   rake: 'paw',
   whip: 'spin',
   curl: 'shield',
+  roll: 'spin',
+  gape: 'sun',
 };
 
 function ActionsCard() {

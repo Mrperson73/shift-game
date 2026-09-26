@@ -13,6 +13,8 @@ const MOVES: Partial<Record<SignatureMove, string>> = {
   rake: 'Claw rake',
   whip: 'Tail whip',
   curl: 'Curl up',
+  roll: 'Death roll',
+  gape: 'Bask',
 };
 
 /** "tailSwipe" -> "Tail swipe" for anything without a name of its own. */

@@ -172,8 +172,8 @@ export function SettingsView() {
         </h2>
         <SwitchRow label="Climb and walk on windows" hint="Otherwise it stays on the taskbar." checked={s.explore} onChange={(explore) => set({ explore })} />
         <SwitchRow label="Hide during full-screen apps" hint="Off: your dinos are always visible" checked={s.hideFullscreen} onChange={(hideFullscreen) => set({ hideFullscreen })} />
-        <SwitchRow label="React to games" hint="The Isle, Brawlhalla and Minecraft." checked={s.gameReactions} onChange={(gameReactions) => set({ gameReactions })} />
-        <SwitchRow label="React to videos" hint="They watch along when you play a video." checked={s.videoReactions} onChange={(videoReactions) => set({ videoReactions })} />
+        <SwitchRow label="React to games" hint="Any game you play: it cheers you on and says GG." checked={s.gameReactions} onChange={(gameReactions) => set({ gameReactions })} />
+        <SwitchRow label="React to videos" hint="YouTube, Twitch, Netflix, video players... it watches along." checked={s.videoReactions} onChange={(videoReactions) => set({ videoReactions })} />
         <SwitchRow label="Start with Windows" hint="Your dinos are there when you log in." checked={s.startWithWindows} onChange={(startWithWindows) => set({ startWithWindows })} />
         {displays.value.length > 1 && (
           <SettingRow label="Monitors" hint={s.monitors === 'all' ? 'They walk from one screen to the next' : 'They all stay on your main screen'}>
