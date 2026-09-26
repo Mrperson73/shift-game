@@ -216,16 +216,17 @@ function boneTo(path: Path2D, a: V, b: V, ra: number, rb: number) {
   path.closePath();
 }
 
-/** How open the wings are: flying, or spread wide while showing off. */
+/** How open the wings are: flying, spread while standing (stretching, mantling), or showing off. */
 export function wingSpread(r: Rig): number {
-  return clamp(Math.max(r.pose.fly * 1.2, r.pose.display * 0.85), 0, 1);
+  return clamp(Math.max(r.pose.fly * 1.2, r.pose.wings, r.pose.display * 0.85), 0, 1);
 }
 
 /** Draws one open wing (flying or showing off). */
 export function drawWing(ctx: Ctx, r: Rig, pal: Palette, o: number, near: boolean) {
   const spread = wingSpread(r);
   const flying = r.pose.fly > 0.4;
-  const flap = flying ? clamp(r.pose.flap, -1, 1) : 0.55;
+  // Spread on the ground, `flap` still says how high they're held.
+  const flap = flying || r.pose.wings > 0.05 ? clamp(r.pose.flap, -1, 1) : 0.55;
   const w = wingShape(r, near, spread, flap);
   if (r.species.features.wings === 'feather') featherWing(ctx, w, r, pal, o, !near);
   else membraneWing(ctx, w, r, pal, o, !near);

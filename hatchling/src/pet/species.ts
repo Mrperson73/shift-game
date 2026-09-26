@@ -187,7 +187,29 @@ export interface Variant {
   pattern_kind: PatternKind;
 }
 
-export type LineEvent = 'hello' | 'welcome' | 'feed' | 'pet' | 'game' | 'gameOver' | 'sleepy' | 'night' | 'grow' | 'thrown' | 'poke';
+export type LineEvent =
+  | 'hello'
+  | 'welcome'
+  | 'feed'
+  | 'pet'
+  | 'game'
+  | 'gameOver'
+  | 'sleepy'
+  | 'night'
+  | 'grow'
+  | 'thrown'
+  | 'poke'
+  // 1.2 (the sim has fallback lines for these: src/sim/lines.ts)
+  | 'full' // a growth treat while still full
+  | 'treat' // ate a growth treat
+  | 'video' // you started watching a video ({site} is filled in)
+  | 'laugh' // reacting to the video
+  | 'friend' // greeting another pet
+  | 'found' // dug something up
+  | 'fish' // caught a fish
+  | 'fly' // taking off
+  | 'tada' // popping back up after playing dead
+  | 'toy'; // a new toy
 
 export interface SpeciesDef {
   id: string;
@@ -1875,7 +1897,7 @@ const FEATURE_KEYS: (keyof Features)[] = [
 const FOODS: Food[] = ['meat', 'fish', 'leaf', 'berry'];
 const MOVES: SignatureMove[] = ['stomp', 'headbutt', 'tailSwipe', 'charge', 'fish', 'honk', 'display', 'browse', 'dig', 'screech', 'fly', 'rake', 'whip', 'curl', 'roll', 'gape'];
 const PERSONALITY_KEYS: (keyof Personality)[] = ['speed', 'jump', 'curiosity', 'stamina', 'playfulness', 'vocal'];
-const LINE_EVENTS: LineEvent[] = ['hello', 'welcome', 'feed', 'pet', 'game', 'gameOver', 'sleepy', 'night', 'grow', 'thrown', 'poke'];
+const LINE_EVENTS: LineEvent[] = ['hello', 'welcome', 'feed', 'pet', 'game', 'gameOver', 'sleepy', 'night', 'grow', 'thrown', 'poke', 'full', 'treat', 'video', 'laugh', 'friend', 'found', 'fish', 'fly', 'tada', 'toy'];
 const HEX = /^#[0-9a-f]{6}$/i;
 
 export class ModError extends Error {}

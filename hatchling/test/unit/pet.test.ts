@@ -151,7 +151,7 @@ describe('pet', () => {
     expect(pet.data.stats.meals).toBe(1);
   });
 
-  it('climbs up the side of a tall window to reach food on top, and comes back down', () => {
+  it('climbs up the side of a tall window (or flies up) to reach food on top, and comes back down', () => {
     for (const species of BUILT_IN) {
       const { pet, run } = make({ species, seed: 5 });
       const top = win('t', 520, 1180, 180);
@@ -164,7 +164,8 @@ describe('pet', () => {
       pet.foods.push({ id: 7, x: 800, y: 180, vy: 0, landed: true, platform: top, left: 1, kind: 'meat' });
       let climbed = false;
       run(70, () => {
-        if (pet.act.k === 'climb') climbed = true;
+        // Winged species fly up instead.
+        if (pet.act.k === 'climb' || (species.features.wings && pet.act.k === 'fly')) climbed = true;
         expect(Number.isFinite(pet.x) && Number.isFinite(pet.y)).toBe(true);
       });
       expect(climbed, species.id).toBe(true);
@@ -379,7 +380,8 @@ describe('pet', () => {
       });
       const total = Object.values(time).reduce((a, b) => a + b, 0);
       const moving = ((time.walk ?? 0) + (time.travel ?? 0)) / total;
-      const play = ['zoomies', 'tail', 'dance', 'hop', 'pounce', 'hunt', 'chase'].reduce((a, k) => a + (time[k] ?? 0), 0) / total;
+      // Play includes climbing the screen edges for fun (there are no windows here to climb to).
+      const play = ['zoomies', 'tail', 'dance', 'hop', 'pounce', 'hunt', 'chase', 'climbfun', 'climb', 'cling', 'toy', 'tag', 'leap'].reduce((a, k) => a + (time[k] ?? 0), 0) / total;
       return { moving, play, kinds: Object.keys(time).length };
     };
     const lively = share('lively');

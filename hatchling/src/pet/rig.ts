@@ -58,9 +58,13 @@ export interface Pose {
   fly: number;
   /** Wing stroke while flying: -1 wings down .. 1 wings up. */
   flap: number;
+  /** 0..1 wings spread while standing (stretching, mantling, sunning); `flap` sets their angle. */
+  wings: number;
+  /** 0..1 scratching an itch with the near hind foot (two-legged species). */
+  scratch: number;
 }
 
-export const NEUTRAL: Pose = { hipDrop: 0, pitch: 0, neck: 0, head: 0, jaw: 0, tailLift: 0, tailCurl: 0, tailWag: 0, arms: 0, tremble: 0, crouch: 0, stretch: 0, abs: 0, neckAbs: 0, headAbs: 0, tilt: 0, dance: 0, shake: 0, wiggle: 0, paw: 0, display: 0, fly: 0, flap: 0 };
+export const NEUTRAL: Pose = { hipDrop: 0, pitch: 0, neck: 0, head: 0, jaw: 0, tailLift: 0, tailCurl: 0, tailWag: 0, arms: 0, tremble: 0, crouch: 0, stretch: 0, abs: 0, neckAbs: 0, headAbs: 0, tilt: 0, dance: 0, shake: 0, wiggle: 0, paw: 0, display: 0, fly: 0, flap: 0, wings: 0, scratch: 0 };
 
 export interface LegOut {
   hip: V;
@@ -431,6 +435,12 @@ export class Rig {
           const u = back ? k / 0.7 : (k - 0.7) / 0.3;
           x = lerp(x, (back ? lerp(0.2, -0.35, u) : lerp(-0.35, 0.2, u)) * stride, po.paw);
           lift = Math.max(lift, back ? 0 : Math.sin(Math.PI * u) * len * 0.12 * po.paw);
+        }
+        // Scratching an itch: the near hind foot comes up and forward and scratches quickly.
+        if (i === 0 && !front && !quad && po.scratch > 0.01) {
+          const k = Math.sin(t * 24) * 0.5 + 0.5;
+          x = lerp(x, p.bodyLen * 0.3 + p.hipR * 0.4 + k * p.meta * 0.25, po.scratch);
+          lift = Math.max(lift, (p.hipHeight * 0.42 + k * p.meta * 0.2) * po.scratch);
         }
         const bx = joint.x + x + spec.meta * (front ? 0.25 : 0.3);
         ball = { x: bx, y: lift };

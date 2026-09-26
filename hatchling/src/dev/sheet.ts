@@ -1,17 +1,28 @@
 // Dev-only contact sheet: every pose at every growth stage, for visual QA.
+// ?species=rex&variant=0&zoom=1&poses=stand,walk&growth=0,1 — or poses=new for all the 1.2 poses
+// (node scripts/sheet.mjs rex 0 1 new).
 import { drawEgg, drawPet, palette } from '../pet/draw';
 import { rng } from '../pet/math';
 import { applyPose, type PoseName } from '../pet/poses';
 import { Rig } from '../pet/rig';
 import { BUILT_IN } from '../pet/species';
+import { deadNeck, deadThickness } from '../sim/moves';
 
 const q = new URLSearchParams(location.search);
-const species = BUILT_IN.find((s) => s.id === (q.get('species') ?? 'rex'))!;
+const base = BUILT_IN.find((s) => s.id === (q.get('species') ?? 'rex'))!;
+// ?wings=membrane|feather tries wings on a species that has none (until the flyers exist).
+const wings = q.get('wings') as 'membrane' | 'feather' | null;
+const species = wings ? { ...base, features: { ...base.features, wings } } : base;
 const variantIdx = Number(q.get('variant') ?? 0);
 const zoom = Number(q.get('zoom') ?? 1);
-const only = q.get('poses')?.split(',') as PoseName[] | undefined;
+const only = q.get('poses')?.split(',') as Shot[] | undefined;
 const growths = (q.get('growth') ?? '0,0.25,0.65,1').split(',').map(Number);
-const poses: (PoseName | 'walk' | 'run' | 'egg')[] = only ?? ['egg', 'stand', 'walk', 'run', 'sit', 'lie', 'sleep', 'roar', 'eat', 'jump', 'held', 'happy', 'dance', 'pounce', 'stretch'];
+/** Poses, plus a few shots that need more than a pose: walking, running, flapping up and down,
+ * playing dead (drawn upside down on its back) and clinging to a wall (drawn turned sideways). */
+type Shot = PoseName | 'walk' | 'run' | 'egg' | 'flapUp' | 'flapDown' | 'wall';
+const CLASSIC: Shot[] = ['egg', 'stand', 'walk', 'run', 'sit', 'lie', 'sleep', 'roar', 'eat', 'jump', 'held', 'happy', 'dance', 'pounce', 'stretch'];
+const NEW: Shot[] = ['flapUp', 'flapDown', 'takeoff', 'wings', 'mantle', 'bow', 'playdead', 'cheer', 'charge', 'bonk', 'stomp', 'honk', 'display', 'browse', 'dig', 'screech', 'rake', 'whip', 'curl', 'peer', 'snap', 'lurk', 'gape', 'video', 'laugh', 'gasp', 'scratch', 'preen', 'rear', 'crouchWatch', 'reach', 'stretchNeck', 'headToss', 'forage', 'stalk', 'wall'];
+const poses: Shot[] = only?.[0] === ('new' as Shot) ? NEW : only ?? CLASSIC;
 const cw = 190 * zoom;
 const ch = 150 * zoom;
 const canvas = document.createElement('canvas');
@@ -46,11 +57,29 @@ growths.forEach((g, row) => {
       applyPose(r, 'stand');
       r.speed = name === 'run' ? 95 : 42;
       r.run = name === 'run' ? 1 : 0;
-    } else applyPose(r, name);
+    } else if (name === 'flapUp' || name === 'flapDown') {
+      applyPose(r, 'fly', { flap: name === 'flapUp' ? 1 : -1 });
+    } else if (name === 'wall') applyPose(r, 'cling');
+    else if (name === 'playdead') applyPose(r, 'playdead', deadNeck(r.p));
+    else applyPose(r, name);
     r.look = { x: 90, y: 70 };
     for (let i = 0; i < 90; i++) r.update(1 / 60);
-    if (name === 'jump' || name === 'fall' || name === 'held') ctx.translate(0, -26 * zoom);
-    drawPet(ctx, r, pal, species.features, { scale: sc, outline: 1.8 * zoom, shadow: name !== 'held' && name !== 'jump' && name !== 'fall' });
+    const air = name === 'jump' || name === 'fall' || name === 'held' || name === 'flapUp' || name === 'flapDown';
+    if (air) ctx.translate(0, -26 * zoom);
+    if (name === 'playdead') {
+      // On its back: turned upside down, resting on the ground.
+      ctx.translate(0, -deadThickness(r.p) * sc);
+      ctx.rotate(Math.PI);
+    }
+    if (name === 'wall') {
+      // Feet against a wall on the left, climbing up.
+      ctx.translate(-cw * 0.4, -ch * 0.35);
+      ctx.fillStyle = '#b8c3cf';
+      ctx.fillRect(-4, -ch * 0.6, 4, ch * 0.95);
+      ctx.rotate(Math.PI / 2);
+      ctx.scale(-1, 1);
+    }
+    drawPet(ctx, r, pal, species.features, { scale: sc, outline: 1.8 * zoom, shadow: !air && name !== 'playdead' && name !== 'wall' });
     ctx.restore();
   });
 });

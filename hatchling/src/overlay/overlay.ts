@@ -17,6 +17,7 @@ import { type EdgeKind, type Env, type Friend, Pet, type SimEvent, type SoundNam
 import { GROUND, ground, type World } from '../sim/world';
 import { ballSprite, butterflyEl, foodSprite, Fx } from './fx';
 import { Sounds } from './sound';
+import { ToyLayer } from './toys';
 
 const api = window.hatch;
 const stage = document.getElementById('stage')!;
@@ -39,6 +40,8 @@ interface Host {
   /** Its emotes and speech bubbles. */
   fx: Fx;
   fxEl: HTMLDivElement;
+  /** Its toys (bubbles, bone, duck, laser, puddle). */
+  toys: ToyLayer;
   pal: Palette;
   canvasW: number;
   canvasH: number;
@@ -87,7 +90,7 @@ let captured = false;
 /** The dino under the cursor. */
 let hover: Host | null = null;
 let down: { x: number; y: number; t: number; host: Host | null } | null = null;
-let dragging: { host: Host; what: 'pet' | 'ball' } | null = null;
+let dragging: { host: Host; what: 'pet' | 'ball' | 'toy' } | null = null;
 let frames = 0;
 const errors: string[] = [];
 const dpr = () => window.devicePixelRatio || 1;
@@ -145,6 +148,7 @@ function add(hp: HostedPet) {
     ctx: canvas.getContext('2d')!,
     fx: new Fx(fxEl),
     fxEl,
+    toys: new ToyLayer(stage),
     pal: paletteFor(speciesOf(hp.pet.species), hp.pet.variant, hp.pet.colors),
     canvasW: 0,
     canvasH: 0,
@@ -215,6 +219,7 @@ function leave(h: Host, l: Leave) {
   if (i >= 0) hosts.splice(i, 1);
   h.canvas.remove();
   h.fxEl.remove();
+  h.toys.clear();
   for (const el of h.foodEls.values()) el.remove();
   h.ballEl?.remove();
   h.flyEl?.remove();
@@ -243,8 +248,7 @@ function friendsOf(h: Host): Friend[] {
   const out: Friend[] = [];
   for (const o of hosts) {
     if (o === h) continue;
-    const q = o.pet;
-    out.push({ id: q.data.id, species: q.data.species, x: q.x, y: q.y, h: q.heightPx, facing: q.facing, act: q.act.k, asleep: q.asleep });
+    out.push(o.pet.asFriend());
   }
   return out;
 }
@@ -272,7 +276,7 @@ function resizeCanvas(h: Host) {
   const ext = pet.hatched ? pet.rig.reach * pet.px : pet.eggSize * 1.4;
   const w = Math.ceil(ext * 2 + 24);
   const r = pet.rig.pose;
-  const tall = !pet.hatched || pet.rot !== 0 || pet.held || r.fly > 0.02 || (!!pet.species.features.wings && r.display > 0.02);
+  const tall = !pet.hatched || pet.rot !== 0 || pet.held || pet.flying || r.fly > 0.02 || (!!pet.species.features.wings && (r.display > 0.02 || r.wings > 0.02));
   const below = tall ? ext + 12 : Math.ceil(ext * 0.15 + 12);
   const hgt = Math.ceil(ext + 12 + below);
   if (Math.abs(w - h.canvasW) < 2 && Math.abs(hgt - h.canvasH) < 2) return;
@@ -317,8 +321,8 @@ function drawSprites(h: Host) {
   for (const f of pet.foods) {
     let el = h.foodEls.get(f.id);
     if (!el) {
-      el = foodSprite(f.kind, size);
-      el.className = 'sprite';
+      el = foodSprite(f.golden ? 'treat' : f.kind, size);
+      el.className = f.golden ? 'sprite golden' : 'sprite';
       stage.appendChild(el);
       h.foodEls.set(f.id, el);
     }
@@ -354,6 +358,7 @@ function drawSprites(h: Host) {
     h.flyEl = null;
   }
   if (fly && h.flyEl) h.flyEl.style.transform = `translate(${fly.x - 13}px, ${fly.y - 11}px) scaleX(${fly.vx < 0 ? -1 : 1}) rotate(${Math.max(-0.5, Math.min(0.5, fly.vy / 400))}rad)`;
+  h.toys.sync(pet);
   if (h.shell && performance.now() > h.shell.until) {
     h.shell.el.remove();
     h.shell = null;
@@ -423,6 +428,9 @@ function handle(h: Host, events: SimEvent[]) {
         h.fx.burst(c.x, c.y, Math.max(0.8, pet.px * 1.6));
         break;
       }
+      case 'fx':
+        h.fx.effect(e.kind, e.x, e.y, e.dir ?? 1, e.scale ?? Math.max(0.6, pet.px));
+        break;
       case 'hatched':
         h.pop = 0;
         leaveShell(h);
@@ -453,7 +461,8 @@ function status(h: Host) {
   const d = pet.data;
   if (!pet.hatched) return `${d.name} · egg`;
   const g = pet.growth;
-  const doing = pet.asleep ? 'sleeping' : pet.act.k === 'eat' ? 'eating' : pet.act.k === 'climb' ? 'climbing' : pet.act.k === 'dance' ? 'dancing' : '';
+  const k = pet.act.k;
+  const doing = pet.asleep ? 'sleeping' : k === 'eat' ? 'eating' : k === 'climb' || k === 'cling' ? 'climbing' : k === 'dance' ? 'dancing' : k === 'fly' ? 'flying' : k === 'toy' ? 'playing' : k === 'watchVideo' ? 'watching' : '';
   return `${d.name} · ${stageName(stageOf(g))} ${Math.floor(g * 100)}%${doing ? ` · ${doing}` : ''}`;
 }
 
@@ -539,9 +548,11 @@ function loop() {
 }
 
 /** Fast motion that needs smooth frames. Walking is fine at 30 fps; running and jumping aren't. */
-const FAST = new Set(['jump', 'fall', 'move', 'climb', 'land', 'held', 'chase', 'zoomies', 'tail', 'hatch', 'pounce', 'hop']);
-const WALK = new Set(['walk', 'travel', 'follow', 'hunt', 'shake', 'dizzy', 'dance', 'paw']);
-const CALM = new Set(['idle', 'sit', 'lie', 'watch', 'wake', 'gaze', 'stretch']);
+const FAST = new Set(['jump', 'fall', 'move', 'climb', 'land', 'held', 'chase', 'zoomies', 'tail', 'hatch', 'pounce', 'hop', 'fly', 'leap', 'tag']);
+const WALK = new Set(['walk', 'travel', 'follow', 'hunt', 'shake', 'dizzy', 'dance', 'paw', 'special', 'toy', 'fidget', 'forage', 'greet', 'roaroff', 'climbfun', 'cling', 'bow', 'playdead']);
+const CALM = new Set(['idle', 'sit', 'lie', 'watch', 'wake', 'gaze', 'stretch', 'perch', 'watchVideo']);
+/** Drawn rotated or off the ground but holding still (clinging to a wall, playing dead). */
+const STILL = new Set(['cling', 'playdead']);
 
 /** How often a dino needs to be redrawn right now. */
 function need(h: Host) {
@@ -550,12 +561,13 @@ function need(h: Host) {
   // Only things that actually move need smooth frames: a resting ball or food on the ground doesn't.
   const b = pet.ball;
   const ballMoving = !!b && (b.held || Math.abs(b.vx) > 1 || b.vy !== 0);
-  const effects = pet.foods.some((f) => !f.landed) || ballMoving || !!pet.butterfly || dragging?.host === h || h.pop < 1 || h.squash !== 0;
-  if (effects || !pet.grounded || pet.rot !== 0 || FAST.has(pet.act.k)) return 60;
+  // pet.smooth: a fast part of a move, toys in motion.
+  const effects = pet.foods.some((f) => !f.landed) || ballMoving || !!pet.butterfly || dragging?.host === h || h.pop < 1 || h.squash !== 0 || pet.smooth;
+  if (effects || ((!pet.grounded || pet.rot !== 0) && !STILL.has(pet.act.k)) || FAST.has(pet.act.k)) return 60;
   const speed = Math.abs(pet.vx);
   if (speed > pet.walkSpeed * 1.25 || pet.rig.run > 0.5) return 60;
   if (speed > 1 || WALK.has(pet.act.k)) return 30;
-  if (pet.asleep) return 8;
+  if (pet.asleep) return pet.settling ? 30 : 8;
   if (CALM.has(pet.act.k)) return hover === h || (cursor && nearPet(h, cursor)) ? 30 : 15;
   return 30;
 }
@@ -628,6 +640,12 @@ function ballAt(p: Pt): Host | null {
   return null;
 }
 
+/** The dino whose toy (bone, duck, bubble wand...) is at a point. */
+function toyAt(p: Pt): Host | null {
+  for (let i = hosts.length - 1; i >= 0; i--) if (hosts[i].pet.overToy(p)) return hosts[i];
+  return null;
+}
+
 /** A point on another monitor (outside this one): a dino let go there moves over. */
 function onOtherMonitor(p: Pt) {
   if (p.x >= 0 && p.y >= 0 && p.x < world.width && p.y < world.height) return false;
@@ -645,7 +663,7 @@ function updateHover() {
   if (dragging || down) return;
   const c = !hidden && !locked ? cursor : null;
   hover = c ? petAt(c) : null;
-  setCapture(!!c && (hover !== null || ballAt(c) !== null));
+  setCapture(!!c && (hover !== null || ballAt(c) !== null || toyAt(c) !== null));
 }
 
 /** Let go of whatever is held (mouse released, focus lost, or a missed mouseup). */
@@ -653,6 +671,7 @@ function endPointer(at?: Pt) {
   const d = dragging;
   if (d?.what === 'pet') d.host.pet.release();
   else if (d?.what === 'ball') d.host.pet.releaseBall();
+  else if (d?.what === 'toy') d.host.pet.releaseToy();
   dragging = null;
   down = null;
   document.body.classList.remove('dragging');
@@ -669,7 +688,9 @@ window.addEventListener('mousemove', (e) => {
   mouseAt = performance.now();
   if (down && !dragging && Math.hypot(p.x - down.x, p.y - down.y) > 5) {
     const b = ballAt(down);
+    const t = down.host ? null : toyAt(down);
     if (b && b.pet.grabBall(down)) dragging = { host: b, what: 'ball' };
+    else if (t && t.pet.grabToy(down)) dragging = { host: t, what: 'toy' };
     else if (down.host) {
       dragging = { host: down.host, what: 'pet' };
       down.host.pet.grab(down);
@@ -682,6 +703,7 @@ window.addEventListener('mousemove', (e) => {
   }
   if (dragging?.what === 'pet') dragging.host.pet.drag(p);
   else if (dragging?.what === 'ball') dragging.host.pet.dragBall(p);
+  else if (dragging?.what === 'toy') dragging.host.pet.dragToy(p);
   else if (!down && prev) petAt(p)?.pet.stroke(Math.hypot(p.x - prev.x, p.y - prev.y));
 });
 
@@ -707,9 +729,14 @@ window.addEventListener('pointercancel', () => endPointer());
 
 window.addEventListener('mouseup', (e) => {
   if (e.button !== 0) return;
-  const tap = !dragging && down?.host && performance.now() - down.t < 450 && down.host.pet.hitTest(down) ? down.host : null;
+  const at = down;
+  const quick = !dragging && !!at && performance.now() - at.t < 450;
+  const tap = quick && at!.host && at!.host.pet.hitTest(at!) ? at!.host : null;
+  // A quick tap on a toy (squeeze the duck, pop a bubble).
+  const toy = quick && !tap ? toyAt(at!) : null;
   endPointer({ x: e.clientX, y: e.clientY });
   tap?.pet.poke();
+  toy?.pet.tapToy(at!);
 });
 
 window.addEventListener('blur', () => endPointer());
