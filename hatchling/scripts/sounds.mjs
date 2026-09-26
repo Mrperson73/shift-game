@@ -1,10 +1,12 @@
 // Renders every pet sound (each voice kind as a hatchling and an adult, plus the other species' calls)
 // and every UI sound offline in Chromium through the real master bus. Writes WAVs and a listening page
-// to shots/sounds/ and prints duration, peak, RMS and loudness, flagging clipping, DC and clicks.
-//   node scripts/sounds.mjs [--only <regex>] [--png] [--seed <n>]
-//   --only  render only rows whose id matches (e.g. "roar", "^rex-", "ui-")
-//   --png   also draw spectrogram sheets (shots/sounds/sheet-*.png) for visual QA
-//   --zoom  draw the rendered rows as large tiles in one sheet (shots/sounds/sheet-zoom.png)
+// to shots/sounds/ and prints duration, peak, RMS, loudness and brightness, flagging clipping, DC and
+// clicks. Sounds vary between plays, so --seeds renders each row several times and reports the mean.
+//   node scripts/sounds.mjs [--only <regex>] [--png] [--seed <n>] [--seeds <n>]
+//   --only   render only rows whose id matches (e.g. "roar", "^rex-", "ui-")
+//   --png    also draw spectrogram sheets (shots/sounds/sheet-*.png) for visual QA
+//   --zoom   draw the rendered rows as large tiles in one sheet (shots/sounds/sheet-zoom.png)
+//   --seeds  plays per row (seeds seed, seed+1, ...): levels are averaged, peaks are the highest
 import { build } from 'esbuild';
 import { chromium } from '@playwright/test';
 import fs from 'node:fs';
@@ -14,10 +16,11 @@ const args = process.argv.slice(2);
 const opt = (name, def) => (args.includes(name) ? args[args.indexOf(name) + 1] : def);
 const only = opt('--only') ? new RegExp(opt('--only')) : null;
 const seed = Number(opt('--seed', 1));
+const seeds = Math.max(1, Number(opt('--seeds', 1)));
 const zoom = args.includes('--zoom');
 const png = args.includes('--png') || zoom;
 
-// Current and upcoming species; the first of each kind is its reference voice.
+// The species' voices; the first of each kind is its reference voice.
 const VOICES = {
   rex: { pitch: 110, growl: 0.75, kind: 'roar' },
   raptor: { pitch: 330, growl: 0.35, kind: 'screech' },
@@ -25,15 +28,29 @@ const VOICES = {
   trike: { pitch: 90, growl: 0.5, kind: 'bellow' },
   para: { pitch: 150, growl: 0.2, kind: 'honk' },
   galli: { pitch: 600, growl: 0.15, kind: 'trill' },
+  compy: { pitch: 700, growl: 0.3, kind: 'chitter' },
+  ptera: { pitch: 260, growl: 0.55, kind: 'croak' },
+  diplo: { pitch: 55, growl: 0.3, kind: 'rumble' },
+  styraco: { pitch: 115, growl: 0.5, kind: 'grunt' },
+  theriz: { pitch: 140, growl: 0.3, kind: 'coo' },
+  allo: { pitch: 125, growl: 0.7, kind: 'roar' },
   carno: { pitch: 140, growl: 0.8, kind: 'roar' },
   spino: { pitch: 95, growl: 0.6, kind: 'roar' },
   dilo: { pitch: 420, growl: 0.5, kind: 'screech' },
   stego: { pitch: 120, growl: 0.35, kind: 'bellow' },
   ankylo: { pitch: 100, growl: 0.6, kind: 'bellow' },
+  brachio: { pitch: 60, growl: 0.3, kind: 'bellow' },
+  cory: { pitch: 120, growl: 0.2, kind: 'honk' },
+  micro: { pitch: 560, growl: 0.25, kind: 'chitter' },
+  quetzal: { pitch: 150, growl: 0.65, kind: 'croak' },
+  amarga: { pitch: 75, growl: 0.3, kind: 'rumble' },
+  kentro: { pitch: 150, growl: 0.45, kind: 'grunt' },
+  iguano: { pitch: 95, growl: 0.4, kind: 'grunt' },
+  ovi: { pitch: 300, growl: 0.2, kind: 'coo' },
 };
-const REFERENCE = ['rex', 'raptor', 'pachy', 'trike', 'para', 'galli'];
-const EXTRA = ['carno', 'spino', 'dilo', 'stego', 'ankylo'];
-const VOCAL = ['call', 'roar', 'chirp', 'growl', 'happy', 'purr', 'yawn', 'snore', 'sneeze', 'squeak'];
+const REFERENCE = ['rex', 'raptor', 'pachy', 'trike', 'para', 'galli', 'compy', 'ptera', 'diplo', 'styraco', 'theriz'];
+const EXTRA = ['allo', 'carno', 'spino', 'dilo', 'stego', 'ankylo', 'brachio', 'cory', 'micro', 'quetzal', 'amarga', 'kentro', 'iguano', 'ovi'];
+const VOCAL = ['call', 'roar', 'chirp', 'growl', 'happy', 'purr', 'yawn', 'snore', 'sneeze', 'squeak', 'curious', 'yelp', 'whine', 'murmur', 'huff'];
 
 const out = path.resolve('shots/sounds');
 fs.mkdirSync(out, { recursive: true });
@@ -99,12 +116,14 @@ function tile(r, g, x0, y0, label) {
   g.fillStyle = '#eee'; g.font = '11px monospace'; g.fillText(label, x0 + 3, y0 + 11);
 }
 window.names = { pets: SOUND_NAMES, ui: UI_SOUNDS };
-window.run = async (job, seed, at) => {
+window.run = async (job, seed, at, keep) => {
   const r = await render(job, seed);
   const s = analyse(r);
-  const bytes = wav(r, Math.min(r.left.length / r.sampleRate, s.audible + 0.1));
   let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  if (keep) {
+    const bytes = wav(r, Math.min(r.left.length / r.sampleRate, s.audible + 0.1));
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
   if (at) {
     [TW, TH] = at.big ? [1100, 330] : [380, 124];
     let c = sheets.get(at.sheet);
@@ -147,9 +166,14 @@ const rows = [];
 const picked = jobs.filter((j) => !only || only.test(j.id));
 for (const [i, j] of picked.entries()) {
   const at = zoom ? { sheet: 'zoom', rows: picked.length, cols: 1, row: i, col: 0, big: true, label: j.id } : png && j.at ? { ...j.at, label: j.id } : null;
-  const r = await page.evaluate(([job, s, a]) => window.run(job, s, a), [j.job, seed, at]);
-  fs.writeFileSync(path.join(out, `${j.id}.wav`), Buffer.from(r.wav, 'base64'));
-  rows.push({ ...j, ...r.stats, nodes: r.nodes });
+  // The first play is kept (WAV, spectrogram); levels are averaged over all of them.
+  const runs = [];
+  for (let k = 0; k < seeds; k++) runs.push(await page.evaluate(([job, s, a, keep]) => window.run(job, s, a, keep), [j.job, seed + k, k ? null : at, !k]));
+  fs.writeFileSync(path.join(out, `${j.id}.wav`), Buffer.from(runs[0].wav, 'base64'));
+  const mean = (f) => runs.reduce((s, r) => s + r.stats[f], 0) / runs.length;
+  const most = (f) => runs.reduce((m, r) => Math.max(m, Math.abs(r.stats[f])), 0);
+  const stats = { dur: mean('dur'), audible: most('audible'), peak: Math.max(...runs.map((r) => r.stats.peak)), rms: mean('rms'), lufs: mean('lufs'), centroid: mean('centroid'), dc: most('dc'), head: most('head'), tail: most('tail') };
+  rows.push({ ...j, ...stats, nodes: Math.max(...runs.map((r) => r.nodes)) });
 }
 if (png) {
   const sheets = await page.evaluate(() => window.sheets());
@@ -160,28 +184,32 @@ await browser.close();
 // ---- the table ----
 const isUi = (r) => r.who === 'ui';
 // Pet sounds should peak around -6..-1 dBFS; these frequent background ones are deliberately softer.
-const QUIET = { step: [-22, -8], sniff: [-16, -6], snore: [-16, -5], purr: [-16, -3], yawn: [-14, -3], crunch: [-12, -4] };
+const QUIET = { step: [-22, -8], sniff: [-16, -6], snore: [-16, -5], purr: [-16, -3], yawn: [-14, -3], crunch: [-12, -4], huff: [-22, -6], murmur: [-16, -2], whine: [-16, -2], curious: [-12, -1], dig: [-10, -2], rustle: [-12, -4], flap: [-12, -2], bubble: [-12, -4], toy: [-12, -3] };
+// Short transients (clicks, gnawing, stomps, the whip crack) peak high for their loudness; the crack
+// meets the safety clipper's soft knee on purpose, and hatchlings' stomps are only pats.
+const SHARP = { chew: [-8, -1], click: [-10, -1], stomp: [-10, -1], whip: [-6, -0.5] };
 const flags = (r) => {
   const f = [];
   if (r.peak > -0.3) f.push('CLIP');
   if (Math.abs(r.dc) > 1e-3) f.push(`DC(${r.dc.toExponential(1)})`);
   if (r.head > 1e-4) f.push('CLICK-START');
   if (r.tail > 1e-4) f.push('CUT-TAIL');
-  const [lo, hi] = isUi(r) ? [-18, -10] : (QUIET[r.name] ?? [-6, -1]);
+  const [lo, hi] = isUi(r) ? [-18, -10] : (QUIET[r.name] ?? SHARP[r.name] ?? [-6, -1]);
   if (r.peak > hi || r.peak < lo) f.push('LEVEL');
   return f.join(' ');
 };
 const pad = (s, n) => String(s).padEnd(n);
 const num = (x, n, d = 1) => x.toFixed(d).padStart(n);
-const lines = [`${pad('sound', 8)} ${pad('voice', 7)} ${pad('g', 2)} ${'dur s'.padStart(6)} ${'tail s'.padStart(7)} ${'peak'.padStart(6)} ${'rms'.padStart(6)} ${'lufsM'.padStart(6)} ${'nodes'.padStart(5)}  flags`];
+const lines = [`${pad('sound', 8)} ${pad('voice', 7)} ${pad('g', 2)} ${'dur s'.padStart(6)} ${'tail s'.padStart(7)} ${'peak'.padStart(6)} ${'rms'.padStart(6)} ${'lufsM'.padStart(6)} ${'cent'.padStart(5)} ${'nodes'.padStart(5)}  flags`];
 let last = '';
 for (const r of [...rows].sort((a, b) => (isUi(a) === isUi(b) ? 0 : isUi(a) ? 1 : -1) || (isUi(a) ? 0 : pets.indexOf(a.name) - pets.indexOf(b.name)))) {
   if (last && r.name !== last) lines.push('');
   last = r.name;
-  lines.push(`${pad(r.name, 8)} ${pad(r.who, 7)} ${pad(r.g, 2)} ${num(r.dur, 6, 2)} ${num(r.audible, 7, 2)} ${num(r.peak, 6)} ${num(r.rms, 6)} ${num(r.lufs, 6)} ${String(r.nodes).padStart(5)}  ${flags(r)}`);
+  lines.push(`${pad(r.name, 8)} ${pad(r.who, 7)} ${pad(r.g, 2)} ${num(r.dur, 6, 2)} ${num(r.audible, 7, 2)} ${num(r.peak, 6)} ${num(r.rms, 6)} ${num(r.lufs, 6)} ${num(r.centroid, 5, 0)} ${String(r.nodes).padStart(5)}  ${flags(r)}`);
 }
 const bad = rows.filter((r) => /CLIP|DC|CLICK|CUT/.test(flags(r)));
-lines.push('', `${rows.length} sounds rendered to ${path.relative(process.cwd(), out)}/ (48 kHz, volume 1, seed ${seed}); ${bad.length} with clipping, DC or clicks.`);
+const played = seeds > 1 ? `seeds ${seed}..${seed + seeds - 1}, levels averaged` : `seed ${seed}`;
+lines.push('', `${rows.length} sounds rendered to ${path.relative(process.cwd(), out)}/ (48 kHz, volume 1, ${played}); ${bad.length} with clipping, DC or clicks.`);
 console.log(lines.join('\n'));
 fs.writeFileSync(path.join(out, 'levels.txt'), lines.join('\n') + '\n');
 

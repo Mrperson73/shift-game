@@ -1709,7 +1709,7 @@ const TRIM: Record<SoundName, number> = {
   splash: 4.1,
   bonk: 4.6,
   swish: -6.2,
-  whip: 2.0,
+  whip: 0.2,
   dig: -3.7,
   stomp: 3.5,
   toy: 1.2,

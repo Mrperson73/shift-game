@@ -240,8 +240,8 @@ export function whip(p: Patch, w: Who) {
   glide(bp.frequency, t, d, [[0, 380 * s], [1, 3400 * s]]);
   p.noise(t, t + d + 0.012).connect(bp).connect(g).connect(p.out);
   const tc = t + d;
-  burst(p, p.out, tc, 'highpass', 1400 * s, 0.7, 1, 0.0004, 0.014);
-  burst(p, p.out, tc + 0.0012, 'bandpass', 3000 * s * p.vary(1, 0.1), 1.3, 0.6, 0.0005, 0.028);
+  burst(p, p.out, tc, 'highpass', 1400 * s, 0.7, 0.75, 0.001, 0.016);
+  burst(p, p.out, tc + 0.0012, 'bandpass', 3000 * s * p.vary(1, 0.1), 1.3, 0.5, 0.001, 0.03);
   const lg = p.gain(0);
   const le = perc(lg.gain, tc, 0.001, 0.45 * (0.3 + 0.7 * w.big), 0.05);
   const o = p.osc('sine', 150 * Math.sqrt(s), tc, le);
