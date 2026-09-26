@@ -156,24 +156,16 @@ export function SettingsView() {
         <SwitchRow label="React to games" hint="The Isle, Brawlhalla and Minecraft." checked={s.gameReactions} onChange={(gameReactions) => set({ gameReactions })} />
         <SwitchRow label="Start with Windows" hint="Your pet is there when you log in." checked={s.startWithWindows} onChange={(startWithWindows) => set({ startWithWindows })} />
         {i.displays.length > 1 && (
-          <SettingRow label="Screen" hint="Where it lives">
-            <span class="select-wrap">
-              <select
-                aria-label="Screen"
-                value={String(s.display ?? i.displays.find((d) => d.primary)?.id ?? '')}
-                onChange={(e) => {
-                  sfx.play('click');
-                  set({ display: Number(e.currentTarget.value) });
-                }}
-              >
-                {i.displays.map((d) => (
-                  <option key={d.id} value={String(d.id)}>
-                    {d.label}
-                    {d.primary ? ' (main)' : ''}
-                  </option>
-                ))}
-              </select>
-            </span>
+          <SettingRow label="Monitors" hint={s.monitors === 'all' ? 'They walk from one screen to the next' : 'They all stay on your main screen'}>
+            <Segmented
+              label="Monitors"
+              value={s.monitors}
+              options={[
+                ['all', 'All screens'],
+                ['primary', 'Main only'],
+              ]}
+              onChange={(monitors) => set({ monitors })}
+            />
           </SettingRow>
         )}
       </section>
