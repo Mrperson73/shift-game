@@ -54,6 +54,10 @@
       {
         "from": "resources/tray.png",
         "to": "tray.png"
+      },
+      {
+        "from": "resources/tray@2x.png",
+        "to": "tray@2x.png"
       }
     ],
     "asar": true,

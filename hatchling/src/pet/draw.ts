@@ -1481,7 +1481,7 @@ function drawTwinCrest(ctx: Ctx, r: Rig, pal: Palette, o: number, far: boolean) 
  * Draws an egg standing on the origin. `crack` 0..1 adds cracks; `wobble` is the tilt in radians.
  * `open` 0..1 lifts the top shell off as it hatches.
  */
-export function drawEgg(ctx: Ctx, size: number, pal: Palette, wobble: number, crack: number, open = 0) {
+export function drawEgg(ctx: Ctx, size: number, pal: Palette, wobble: number, crack: number, open = 0, only?: 'top' | 'bottom') {
   const w = size * 0.74;
   const h = size;
   const o = Math.max(1.4, size * 0.035);
@@ -1537,7 +1537,12 @@ export function drawEgg(ctx: Ctx, size: number, pal: Palette, wobble: number, cr
     ctx.fill();
     ctx.restore();
   };
-  if (open <= 0) {
+  if (only) {
+    // Just one piece of a hatched egg, where it was (the app icon wears the top as a hat).
+    const path = new Path2D();
+    egg(path, only === 'top', only === 'bottom');
+    drawShell(path);
+  } else if (open <= 0) {
     const path = new Path2D();
     egg(path, false, false);
     drawShell(path);
