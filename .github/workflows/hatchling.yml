@@ -93,7 +93,10 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "installed app failed its smoke test (exit $($p.ExitCode))" }
 
           # A start-with-Windows entry (as the app writes it) must be gone after uninstalling.
-          New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Hatchling' -Value "`"$exe`" --autostart" -Force | Out-Null
+          # (Fresh runner images may not have the Run key yet.)
+          $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
+          New-ItemProperty -Path $runKey -Name 'Hatchling' -Value "`"$exe`" --autostart" -Force | Out-Null
           Start-Process "$dir\Uninstall Hatchling.exe" -ArgumentList '/S' -Wait
           # The NSIS uninstaller re-launches itself from %TEMP%, so wait for the files to go.
           for ($i = 0; $i -lt 60 -and (Test-Path $exe); $i++) { Start-Sleep -Milliseconds 500 }
