@@ -1,0 +1,104 @@
+{
+  "name": "knobs",
+  "productName": "Knobs",
+  "version": "1.0.0",
+  "description": "Live-tuning lab for HTML games",
+  "main": "dist/main.js",
+  "private": true,
+  "license": "MIT",
+  "author": "Mrperson",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "electron .",
+    "dev": "node build.mjs --dev && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "node build.mjs && playwright test",
+    "dist:win": "node build.mjs && electron-builder --win --x64 --publish never",
+    "dist:mac": "node build.mjs && electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63",
+    "@preact/signals": "^2.11.2",
+    "@types/node": "^22.20.4",
+    "diff": "^9.0.0",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "eslint-scope": "^9.1.2",
+    "eslint-visitor-keys": "^5.0.1",
+    "espree": "^11.2.0",
+    "parse5": "^8.0.1",
+    "preact": "^10.29.8",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  },
+  "homepage": "https://github.com/mrperson73/shift-game/tree/main/knobs",
+  "build": {
+    "appId": "app.knobs.desktop",
+    "productName": "Knobs",
+    "copyright": "Copyright © 2026 Mrperson",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/demo",
+        "to": "demo"
+      }
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Knobs-Portable-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "packElevateHelper": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Knobs",
+      "uninstallDisplayName": "Knobs",
+      "artifactName": "Knobs-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png"
+    },
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mrperson73/shift-game.git",
+    "directory": "knobs"
+  },
+  "desktopName": "knobs.desktop"
+}

@@ -1,0 +1,2483 @@
+// The pet's life: physics on platforms, what it decides to do, its needs and growth.
+// Pure logic (no DOM): the overlay feeds it input and draws the result.
+
+import { growthOf, stageOf, stageSeconds, type Stage } from '../pet/growth';
+import { clamp, type V } from '../pet/math';
+import { applyPose, type PoseName } from '../pet/poses';
+import { type Pose, Rig } from '../pet/rig';
+import type { Food as FoodKind, LineEvent, SignatureMove, SpeciesDef } from '../pet/species';
+import { type Activity, type PetData, type Platform, type Settings, SIZE_SCALE, type ToyKind, type TrickName, type Wall } from '../shared/types';
+import { G, type Option, pickWeighted, TAU } from './common';
+import * as Fidgets from './fidgets';
+import * as Flight from './flight';
+import { pickLine } from './lines';
+import * as Moves from './moves';
+import * as Social from './social';
+import { type Traits, traitsOf } from './traits';
+import * as Toys from './toys';
+import type { Toy } from './toys';
+import * as Walls from './walls';
+import { type Abilities, GROUND, ground, landingOn, ride, rideWall, route, usable, wallFoot, type World } from './world';
+
+export type EmoteKind = 'heart' | 'hearts' | 'zzz' | 'exclaim' | 'question' | 'note' | 'anger' | 'sweat' | 'stars' | 'food' | 'sparkle';
+import type { SoundName } from '../audio/types';
+
+export type { SoundName } from '../audio/types';
+
+/** Effects the overlay draws at a point (see Fx.effect). */
+export type FxKind =
+  | 'pop' // a bubble popping
+  | 'splash' // water drops flying up
+  | 'drops' // water shaken off the body
+  | 'ripple' // a ring on a puddle
+  | 'leaves' // leaves drifting down
+  | 'dirt' // dirt kicked backwards (dir: which way)
+  | 'rings' // sound rings (a big honk)
+  | 'shockwave' // a ring of dust along the ground (stomp)
+  | 'bonk' // stars where a head hits a wall
+  | 'crack' // a whip crack
+  | 'slash' // three claw streaks (dir: which way)
+  | 'swoosh' // a motion arc (tail swipe)
+  | 'sparkles' // a golden sparkle shower (growth treat)
+  | 'find' // something dug up pops out of the ground
+  | 'feather'; // a feather drifting down
+
+export type SimEvent =
+  | { type: 'emote'; kind: EmoteKind }
+  | { type: 'say'; text: string }
+  | { type: 'sound'; name: SoundName; soft?: boolean }
+  | { type: 'dust'; x: number; y: number; big: boolean; small?: boolean }
+  | { type: 'crumbs'; x: number; y: number }
+  | { type: 'hatched' }
+  | { type: 'grew'; stage: Stage }
+  /** Squash (landing, > 0) or stretch (taking off, < 0) the drawing for a moment. */
+  | { type: 'squash'; amount: number }
+  /** A burst of sparkles around the pet (growing up, shiny). */
+  | { type: 'burst' }
+  /** A small effect at a point (overlay coordinates); `dir` is -1/1 for effects that have a direction. */
+  | { type: 'fx'; kind: FxKind; x: number; y: number; dir?: number; scale?: number }
+  | { type: 'save' }
+  /** It walked off an 'exit' edge (see Pet.leave): the overlay hands it to the monitor there. */
+  | { type: 'exit'; side: 'left' | 'right'; y: number; ground: boolean };
+
+export interface Food {
+  id: number;
+  x: number;
+  y: number;
+  vy: number;
+  landed: boolean;
+  platform: Platform | null;
+  left: number;
+  kind: FoodKind;
+  /** A growth treat. */
+  golden?: boolean;
+}
+
+/** A tiny fly buzzing around its head (it snaps at it). */
+export interface Gnat {
+  x: number;
+  y: number;
+  t: number;
+  /** Flying off (it got away). */
+  away: boolean;
+}
+
+/** A butterfly that sometimes flutters by; the pet tries to catch it (it never does). */
+export interface Butterfly {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  t: number;
+  /** Colour index (the overlay picks the colours). */
+  hue: number;
+  leaving: boolean;
+}
+
+export interface Ball {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  r: number;
+  angle: number;
+  quiet: number;
+  age: number;
+  held: boolean;
+}
+
+type SleepReason = 'nap' | 'idle' | 'lock' | 'command';
+export type ReactKind = 'roar' | 'happy' | 'poke' | 'welcome' | 'grow' | 'game' | 'hungry' | 'chirp' | 'annoyed' | 'hello' | 'video';
+export type Purpose = 'explore' | 'food' | 'cursor' | 'ball' | 'toy' | 'nap';
+
+/** Short species-flavoured idle animations (see fidgets.ts). */
+export type Fidget =
+  | 'look' // look around, left, right, behind
+  | 'turn' // look back over the shoulder, then turn around
+  | 'scratch' // scratch an itch with a hind foot
+  | 'ground' // scratch the ground with a foot
+  | 'preen' // groom feathers or wings
+  | 'stretchNeck' // stretch the neck out forward
+  | 'tailFlick' // flick the tail
+  | 'headShake' // shake the head
+  | 'yawn' // a big standing yawn
+  | 'snap' // snap at a buzzing fly
+  | 'stompInPlace' // heavy little stomps on the spot
+  | 'sway' // slow neck sways (sauropods)
+  | 'reach' // reach up high and sniff the air (sauropods)
+  | 'jerk' // twitchy head jerks (raptors)
+  | 'crouchWatch' // crouch low and watch, tail twitching (raptors)
+  | 'headToss' // toss the head up (ceratopsians)
+  | 'rear' // rear up on the hind legs (hadrosaurs)
+  | 'wingStretch' // spread and stretch the wings (flyers)
+  | 'mantle' // wings spread and drooped forward (pterosaurs)
+  | 'crestShake' // shake the crest with a wing flutter (pterosaurs)
+  | 'dart' // a quick dash and freeze (small ones)
+  | 'hops'; // a few quick hops (small ones)
+
+export type ForageStyle = 'stalk' | 'sniff' | 'graze' | 'peck';
+
+export type FlyGoal = 'roam' | 'land' | 'butterfly' | 'food' | 'fish' | 'friend' | 'show';
+
+export type FlyPhase = 'crouch' | 'up' | 'cruise' | 'soar' | 'glide' | 'approach' | 'dive';
+
+export type Act =
+  | { k: 'egg'; next: number }
+  | { k: 'hatch'; t: number }
+  | { k: 'idle'; t: number; dur: number; nextLook: number; look: V | null; sniff: number }
+  | { k: 'walk'; toX: number; run: boolean; dur: number; t: number; charge?: boolean; style?: 'lurk' | 'strut' }
+  | { k: 'travel'; to: Platform; toX: number; purpose: Purpose; run: boolean; t: number; drop: boolean }
+  | { k: 'jump'; phase: 'crouch' | 'air'; t: number; tx: number; to: Platform; resume: Act | null }
+  | { k: 'fall'; t: number; resume: Act | null; voluntary: boolean }
+  | { k: 'move'; t: number; dur: number; from: V; to: V; r0: number; r1: number; arc: number; next: Act; platform: Platform | null; wall: Wall | null }
+  /** On a wall. A climb just for fun stops at `stopY` (and clings there), and may be faster (`speed`, px/s). */
+  | { k: 'climb'; wall: Wall; dir: 'up' | 'down'; t: number; top: Platform | null; land: Platform | null; resume: Act | null; stopY?: number; speed?: number }
+  | { k: 'land'; t: number; hard: boolean; resume: Act | null }
+  | { k: 'held'; t: number }
+  | { k: 'dizzy'; t: number }
+  | { k: 'sit'; t: number; dur: number }
+  | { k: 'lie'; t: number; dur: number }
+  /** `settle`: seconds of settling down first (yawn, sit, lie down, head down). */
+  | { k: 'sleep'; reason: SleepReason; t: number; dur: number; nextZ: number; settle: number }
+  | { k: 'wake'; t: number; welcome: boolean }
+  | { k: 'watch'; t: number; dur: number }
+  | { k: 'react'; kind: ReactKind; t: number; dur: number }
+  | { k: 'eat'; food: number; t: number; next: number }
+  | { k: 'chase'; t: number }
+  | { k: 'zoomies'; t: number; laps: number; toX: number }
+  | { k: 'tail'; t: number; flip: number }
+  | { k: 'petted'; t: number; last: number; next: number }
+  | { k: 'dance'; t: number; dur: number; next: number }
+  | { k: 'shake'; t: number }
+  | { k: 'pounce'; phase: 'ready' | 'air'; t: number; wait: number; tx: number }
+  | { k: 'paw'; t: number; charge: boolean; next: number }
+  | { k: 'sneeze'; t: number; done: boolean }
+  | { k: 'hunt'; t: number; snap: number }
+  | { k: 'hop'; t: number; n: number; next: number }
+  | { k: 'stretch'; t: number }
+  | { k: 'gaze'; t: number; dur: number }
+  | { k: 'follow'; t: number }
+  // ---- 1.2 ----
+  /** A signature move (moves.ts): `stage` and `st` (time in the stage) step through it. */
+  | { k: 'special'; move: SignatureMove; t: number; stage: number; st: number; n: number; tx: number; ok: boolean; asked: boolean; v: number }
+  /** Tricks: a big jump, a bow, playing dead (lying on its back, drawn upside down). */
+  | { k: 'leap'; phase: 'crouch' | 'air'; t: number; flip: boolean }
+  | { k: 'bow'; t: number }
+  | { k: 'playdead'; t: number; stage: number; st: number; cx: number; cy: number; hc: number; dir: 1 | -1 }
+  /** Flying (flight.ts). */
+  | {
+      k: 'fly';
+      phase: FlyPhase;
+      t: number;
+      /** Time in the phase. */
+      pt: number;
+      goal: FlyGoal;
+      /** Where it's heading (overlay coordinates). */
+      tx: number;
+      ty: number;
+      /** Waypoints left before it looks for a place to land. */
+      hops: number;
+      /** Where it lands: platform and x. */
+      to: Platform | null;
+      lx: number;
+      /** Lands on the very corner of a window and perches there. */
+      perch: boolean;
+      /** Soaring circle: centre, radius, direction, angle so far, laps left. */
+      cx: number;
+      cy: number;
+      r: number;
+      spin: 1 | -1;
+      ang: number;
+      laps: number;
+      /** Wing stroke phase (radians), flapping strength 0 (gliding) .. 1, time left in a flapping burst. */
+      wing: number;
+      beat: number;
+      burst: number;
+      /** Airspeed (px/s) and heading (radians, screen coordinates: 0 right, π/2 down). */
+      speed: number;
+      heading: number;
+      /** Seconds it stays up before landing. */
+      dur: number;
+      /** Snatched what it dived for. */
+      got: boolean;
+      /** Wing beats so far (for the flap sounds). */
+      beats: number;
+      /** On the final descent to land. */
+      fin: boolean;
+      /** Seconds until it swallows the fish it caught on the wing. */
+      gulp: number;
+    }
+  /** Perching on a window top or corner after landing: looking around, preening. */
+  | { k: 'perch'; t: number; dur: number; next: number }
+  /** Playing with a toy (toys.ts). */
+  | { k: 'toy'; toy: ToyKind; t: number; stage: number; st: number; n: number; next: number; tx: number }
+  /** Walking to the foot of a wall to climb it for fun (walls.ts). */
+  | { k: 'climbfun'; wall: Wall; t: number; stopY: number }
+  /** Clinging to a wall partway up, looking around; then climbs down, jumps off or drops. */
+  | { k: 'cling'; wall: Wall; t: number; dur: number; next: number; then: 'down' | 'jump' | 'drop'; land: Platform | null }
+  /** With other pets (social.ts). */
+  | { k: 'greet'; id: string; t: number; stage: number; st: number }
+  | { k: 'tag'; id: string; role: 'it' | 'run'; t: number; swap: number; dur: number; gone: number }
+  | { k: 'roaroff'; id: string; t: number; lead: boolean; n: number; next: number }
+  /** Sitting and watching the video you're watching, now and then reacting. */
+  | { k: 'watchVideo'; t: number; dur: number; next: number; mood: number; react: 'laugh' | 'gasp' | 'hearts' | null }
+  /** Idle animations (fidgets.ts). */
+  | { k: 'fidget'; what: Fidget; t: number; dur: number; n: number; next: number }
+  | { k: 'forage'; style: ForageStyle; t: number; stage: number; st: number; n: number; toX: number };
+
+/** Another pet on the same screen (for playing together); the overlay updates these every frame. */
+export interface Friend {
+  id: string;
+  species: string;
+  x: number;
+  y: number;
+  /** Height in px. */
+  h: number;
+  facing: number;
+  act: string;
+  asleep: boolean;
+  /** A big theropod (for roar-offs); guessed from the species when missing. */
+  big?: boolean;
+}
+
+/** What a screen edge is: a wall it can climb, or the way to the next monitor. */
+export type EdgeKind = 'wall' | 'exit';
+
+export interface Env {
+  rand: () => number;
+  /** Local hour of day, 0-23. */
+  hour: () => number;
+  now: () => number;
+}
+
+/** Things it drops as soon as there's food to go for (short tricks and games finish first; asked-for
+ * tricks and signature moves are never cut short). */
+const INTERRUPTIBLE = new Set(['idle', 'sit', 'lie', 'walk', 'travel', 'watch', 'gaze', 'stretch', 'follow', 'zoomies', 'hunt', 'chase', 'fidget', 'forage', 'perch', 'watchVideo', 'greet', 'tag', 'toy', 'climbfun']);
+/** Acts that draw the pet rotated (on a wall, upside down); any other act stands it upright again. */
+const ROTATED = new Set(['climb', 'move', 'cling', 'playdead']);
+/** Acts that move it along the ground themselves (the others slow it to a stop). */
+const MOVING = new Set(['walk', 'travel', 'chase', 'zoomies', 'hunt', 'follow', 'special', 'toy', 'tag', 'greet', 'roaroff', 'forage', 'fidget', 'climbfun']);
+/** Soft sounds it keeps to itself while you're gaming or watching a video. */
+const IDLE_NOISES = new Set<SoundName>(['step', 'sniff', 'snore', 'call', 'chirp', 'growl', 'flap', 'rustle', 'dig', 'chew', 'snort', 'whoosh', 'purr', 'yawn']);
+const ACTIVITY_MUL = { calm: 0.55, normal: 1, lively: 1.6 } as const;
+
+export class Pet {
+  data: PetData;
+  species: SpeciesDef;
+  rig: Rig;
+  settings: Settings;
+  env: Env;
+  world: World;
+  events: SimEvent[] = [];
+
+  x = 0;
+  y = 0;
+  vx = 0;
+  vy = 0;
+  facing: 1 | -1 = 1;
+  /** Screen rotation of the pet around its feet (radians): 0 standing, ±π/2 on a window side. */
+  rot = 0;
+  grounded = true;
+  platform: Platform;
+  held = false;
+  act: Act;
+
+  cursor: V | null = null;
+  cursorSpeed = 0;
+  hovering = false;
+  userIdle = 0;
+  locked = false;
+  game: string | null = null;
+  hidden = false;
+  foods: Food[] = [];
+  ball: Ball | null = null;
+  butterfly: Butterfly | null = null;
+  /** Toys that are out (at most one of each kind; the ball is `ball`). */
+  toys: Toy[] = [];
+  /** A fly buzzing around its head. */
+  gnat: Gnat | null = null;
+  /** What kind of animal it is, for species-flavoured behaviour. */
+  traits: Traits;
+  /** The video you're watching, if any. */
+  video: { site: string; title: string } | null = null;
+  /** Set by the current act each frame while it needs smooth frames (a fast part of a move). */
+  fast = false;
+  /** Where the current act wants it to look (overlay coordinates); null: straight ahead; undefined: its own choice. */
+  lookAt: V | null | undefined = undefined;
+  /** A push on the tail (rig units/s²) for swipes and whip cracks; fades by itself. */
+  tailKick = 0;
+  /** No growth treats before this time: it's full. */
+  treatReady = 0;
+  /** A signature move asked for while it couldn't do it right away. */
+  pendingSpecial: SignatureMove | null = null;
+  /** Which of its signature moves the Special button does next. */
+  specialIdx = 0;
+  /** What it remembers about games, videos and other pets (social.ts). */
+  mem = {
+    greeted: new Map<string, number>(),
+    friendActs: new Map<string, string>(),
+    mimicReady: 0,
+    hopReady: 0,
+    tagReady: 0,
+    roarReady: 0,
+    lastCheer: -1e9,
+    lastGG: -1e9,
+    videoSeen: new Map<string, number>(),
+    watchReady: 0,
+  };
+
+  time = 0;
+  private grabOff: V = { x: 0, y: 0 };
+  private dragHist: { x: number; y: number; t: number }[] = [];
+  private rub = 0;
+  private rubDecay = 0;
+  private pokes: number[] = [];
+  private lastWords = -1e9;
+  private lastEmote = -1e9;
+  private nextFoodId = 1;
+  private growthTimer = 0;
+  private hungryNag = 0;
+  private stageNow: Stage;
+  private wantDrop = false;
+  private prevVx = 0;
+  private hiddenFor = 0;
+  private thrown = false;
+  nextButterfly = 150;
+  private lastSteps = 0;
+  private stepSoundAt = -1e9;
+  private pendingTrick: TrickName | null = null;
+  /** When the pending trick was asked for (it's forgotten if it can't happen soon). */
+  private pendingTrickAt = 0;
+  private curiousFlip = 0;
+  /** What it chose last, so it doesn't do the same thing over and over. */
+  private lastCat = '';
+  lastBeh = '';
+  egg = { crack: 0, wobble: 0, open: 0, wobbleT: 0 };
+
+  constructor(data: PetData, species: SpeciesDef, settings: Settings, world: World, env: Env) {
+    this.data = data;
+    this.species = species;
+    this.traits = traitsOf(species);
+    this.settings = settings;
+    this.env = env;
+    this.world = { ...world, walls: [...(world.walls ?? []), ...Walls.edgeWalls(this.edges, world.width, world.height)] };
+    const g = growthOf(data.activeSeconds);
+    this.stageNow = stageOf(g);
+    this.rig = new Rig(species, g, env.rand);
+    this.platform = world.platforms.find((p) => p.id === GROUND) ?? ground(world.width, world.height);
+    const fx = data.x ?? 0.7 + env.rand() * 0.15;
+    this.x = clamp(fx * world.width, this.margin, world.width - this.margin);
+    this.y = this.platform.y;
+    this.act = this.hatched ? this.idleAct(2) : { k: 'egg', next: 2 };
+    this.nextButterfly = 90 + env.rand() * 240;
+    applyPose(this.rig, 'stand');
+    // Coming back after a long time away: rested, a bit hungry.
+    const away = (env.now() - data.lastSeen) / 1000;
+    if (away > 3600) {
+      data.energy = 1;
+      data.hunger = clamp(data.hunger + Math.min(0.4, away / (3600 * 24)), 0, 1);
+    }
+  }
+
+  // ---------------- derived ----------------
+
+  get hatched() {
+    return this.data.hatchedAt !== null;
+  }
+  get growth() {
+    return this.rig.growth;
+  }
+  /** Screen pixels per rig unit. */
+  /** Screen pixels per rig unit: the size setting, how grown up it is, and its species' size. */
+  get px() {
+    return SIZE_SCALE[this.settings.size] * this.rig.size * (this.species.scale ?? 1);
+  }
+  get heightPx() {
+    return this.hatched ? this.rig.height * this.px : this.eggSize * 1.1;
+  }
+  get eggSize() {
+    return 40 * SIZE_SCALE[this.settings.size];
+  }
+  get margin() {
+    return (this.rig.p.bodyLen * 0.5 + this.rig.p.hipR) * this.px;
+  }
+  /** How far the body reaches ahead of the feet (px): used when climbing head first. */
+  get reach() {
+    const p = this.rig.p;
+    return (p.bodyLen * 0.6 + p.neckLen * 0.8 + p.headLen * 0.9) * this.px;
+  }
+  get climbSpeed() {
+    return this.walkSpeed * 1.15;
+  }
+  get anchored() {
+    const k = this.act.k;
+    return k === 'climb' || k === 'move' || k === 'cling' || k === 'playdead';
+  }
+  /** Doing something it would drop for food or a thrown toy. */
+  get interruptible() {
+    return INTERRUPTIBLE.has(this.act.k);
+  }
+  /** In the air under its own power (no gravity). */
+  get flying() {
+    return this.act.k === 'fly' && this.act.phase !== 'crouch';
+  }
+  /** It can fly. */
+  get winged() {
+    return this.traits.wings !== null;
+  }
+  /** Something needs smooth (60 fps) frames beyond what the act itself needs: a fast part of a
+   * move, toys in motion, a fly buzzing about. The overlay's frame-rate choice checks this. */
+  get smooth() {
+    return this.fast || Toys.toysMoving(this) || !!this.gnat;
+  }
+  get abilities(): Abilities {
+    const reach = Math.max(this.maxJumpUp, this.heightPx * (3.2 + 2 * this.species.personality.jump));
+    return { maxUp: this.maxJumpUp, maxReach: reach, maxGap: this.maxGap, maxDrop: Math.max(140, this.heightPx * 3.2), margin: this.margin };
+  }
+  get walkSpeed() {
+    const mul = 0.8 + 0.2 * ACTIVITY_MUL[this.settings.activity];
+    return (26 + 34 * this.species.personality.speed) * this.px * mul * (0.7 + 0.3 * this.data.happiness + 0.2);
+  }
+  get runSpeed() {
+    return this.walkSpeed * 2.3;
+  }
+  /** Jump height: a few body heights. Windows further up are reached by climbing their sides. */
+  get maxJumpUp() {
+    return Math.max(50, this.heightPx * (1.4 + 3 * this.species.personality.jump));
+  }
+  get maxGap() {
+    return 160 * Math.max(0.6, this.px) + this.world.width * 0.08 * this.species.personality.jump;
+  }
+  get asleep() {
+    return this.act.k === 'sleep';
+  }
+  /** Asleep but still settling down (yawning, lying down): worth smoother frames. */
+  get settling() {
+    return this.act.k === 'sleep' && this.act.t < this.act.settle;
+  }
+  /** How long it rests between things: shorter for a lively pet, longer for a calm one. */
+  get pace() {
+    const a = this.settings.activity;
+    return a === 'lively' ? 0.55 : a === 'calm' ? 1.5 : 1;
+  }
+  get platforms() {
+    const all = this.settings.explore ? this.world.platforms : this.world.platforms.filter((p) => p.id === GROUND);
+    return usable({ ...this.world, platforms: all }, this.heightPx, this.margin * 2.2);
+  }
+
+  // ---------------- input from the overlay ----------------
+
+  /** Other pets on this screen. */
+  friends: Friend[] = [];
+  /** The left and right screen edges. */
+  edges: { left: EdgeKind; right: EdgeKind } = { left: 'wall', right: 'wall' };
+
+  setFriends(f: Friend[]) {
+    this.friends = f;
+  }
+
+  setEdges(left: EdgeKind, right: EdgeKind) {
+    if (left === this.edges.left && right === this.edges.right) return;
+    this.edges = { left, right };
+    const w = this.world;
+    this.setWorld(w.width, w.height, w.platforms, w.walls.filter((z) => !z.id.startsWith('edge:')));
+  }
+
+  /** How this pet looks to other pets (pass it to their setFriends). */
+  asFriend(): Friend {
+    return { id: this.data.id, species: this.species.id, x: this.x, y: this.y, h: this.heightPx, facing: this.facing, act: this.act.k, asleep: this.asleep, big: this.traits.bigTheropod };
+  }
+
+  /** A growth treat from the panel: a golden snack drops; eating it makes it grow a bit. */
+  treat() {
+    if (!this.hatched) return;
+    if (this.act.k === 'sleep') this.wake(false);
+    if (this.time < this.treatReady || this.foods.some((f) => f.golden)) {
+      // Still full from the last one.
+      this.emote('sweat');
+      this.say('full', true);
+      if (this.grounded && this.interruptible) this.act = { k: 'fidget', what: 'headShake', t: 0, dur: 0.9, n: 0, next: 0 };
+      return;
+    }
+    const w = this.world;
+    const off = (50 + this.env.rand() * 90) * Math.max(0.7, this.px) * this.facing;
+    const x = clamp(this.x + off, 30, w.width - 30);
+    this.foods.push({ id: this.nextFoodId++, x, y: 0, vy: 0, landed: false, platform: null, left: 1, kind: this.species.food ?? 'meat', golden: true });
+    if (this.foods.length > 5) this.foods.shift();
+    this.sound('magic', true);
+  }
+
+  /** A toy put out from the panel. */
+  toy(kind: ToyKind) {
+    if (!this.hatched) return;
+    if (kind === 'ball') {
+      this.play();
+      return;
+    }
+    if (this.act.k === 'sleep') this.wake(false);
+    Toys.putToy(this, kind);
+    this.say('toy');
+    this.sound('curious', true);
+  }
+
+  /** Its signature move, asked for from the panel (each press does the next of its moves). */
+  special() {
+    if (!this.hatched || this.held) return;
+    const moves = this.traits.moves;
+    const move = moves[this.specialIdx++ % moves.length];
+    this.pendingSpecialAt = this.time;
+    if (this.act.k === 'sleep') {
+      this.wake(false);
+      this.pendingSpecial = move;
+      return;
+    }
+    if (!Moves.startMove(this, move, true)) this.pendingSpecial = move;
+  }
+  /** When the special move was asked for: like tricks, it's forgotten after 20 s. */
+  private pendingSpecialAt = 0;
+
+  setWorld(width: number, height: number, platforms: Platform[], walls: Wall[] = []) {
+    walls = [...walls, ...Walls.edgeWalls(this.edges, width, height)];
+    this.world = { width, height, platforms: platforms.some((p) => p.id === GROUND) ? platforms : [...platforms, ground(width, height)], walls };
+    if (this.held) return;
+    if (this.crossing) {
+      // Walking over the screen edge to (or from) the next monitor: stay on the ground, off screen.
+      this.platform = this.world.platforms.find((p) => p.id === GROUND) ?? this.platform;
+      return;
+    }
+    const a = this.act;
+    if (a.k === 'climb' || a.k === 'cling' || a.k === 'climbfun') {
+      const moved = rideWall(a.wall, walls, this.y);
+      if (moved) {
+        a.wall = moved.w;
+        if (a.k !== 'climbfun') {
+          this.x = moved.w.x;
+          this.y = moved.y;
+        }
+      } else if (a.k === 'climbfun') {
+        this.act = this.idleAct(1);
+      } else {
+        this.rot = 0;
+        this.startFall(0);
+      }
+    }
+    if (a.k === 'climbfun' || (a.k !== 'climb' && a.k !== 'cling' && this.grounded)) {
+      // Playing dead, its feet are in the air: ride along by the middle of its body.
+      const px = a.k === 'playdead' ? a.cx : this.x;
+      const moved = ride(this.platform, this.platforms, px);
+      if (moved) {
+        if (a.k === 'playdead') {
+          a.cx = moved.x;
+          a.cy += moved.p.y - this.platform.y;
+        }
+        this.platform = moved.p;
+        this.x = moved.x;
+        this.y = moved.p.y;
+      } else {
+        this.startFall(-60);
+      }
+    }
+    this.x = clamp(this.x, this.margin * 0.5, width - this.margin * 0.5);
+    for (const f of this.foods) {
+      if (!f.landed || !f.platform) continue;
+      const m = ride(f.platform, this.platforms, f.x);
+      if (m) {
+        f.platform = m.p;
+        f.x = m.x;
+        f.y = m.p.y;
+      } else f.landed = false;
+    }
+    Toys.rideToys(this);
+  }
+
+  setSettings(s: Settings) {
+    this.settings = s;
+  }
+
+  setSpecies(species: SpeciesDef) {
+    this.species = species;
+    this.traits = traitsOf(species);
+    this.rig.setSpecies(species);
+  }
+
+  setCursor(p: V | null, dt: number) {
+    if (p && this.cursor && dt > 0) {
+      const d = Math.hypot(p.x - this.cursor.x, p.y - this.cursor.y);
+      this.cursorSpeed += (d / dt - this.cursorSpeed) * Math.min(1, dt * 10);
+    } else this.cursorSpeed = 0;
+    this.cursor = p;
+  }
+
+  setActivity(a: Activity) {
+    this.userIdle = a.idle;
+    const wasLocked = this.locked;
+    this.locked = a.locked;
+    if (!this.hatched || this.held) return;
+    const act = this.act;
+    if (a.locked && !wasLocked && act.k !== 'sleep') this.sleep('lock');
+    else if (!a.locked && wasLocked && act.k === 'sleep' && act.reason === 'lock') this.wake(true);
+    else if (a.idle >= 300 && act.k !== 'sleep' && this.grounded) this.sleep('idle');
+    else if (a.idle < 3 && act.k === 'sleep' && act.reason === 'idle') this.wake(true);
+    if (a.game !== this.game) {
+      const prev = this.game;
+      this.game = a.game;
+      Social.gameChanged(this, prev, a.game);
+    }
+    const v = a.video ?? null;
+    if (v?.site !== this.video?.site || v?.title !== this.video?.title) {
+      const prev = this.video;
+      this.video = v ? { site: v.site, title: v.title } : null;
+      Social.videoChanged(this, prev, this.video);
+    }
+  }
+
+  setHidden(h: boolean) {
+    if (h === this.hidden) return;
+    this.hidden = h;
+    if (h) {
+      this.hiddenFor = 0;
+      if (this.held) this.release();
+    } else if (this.hiddenFor > 120 && this.hatched && this.act.k !== 'sleep' && this.act.k !== 'wake') this.react('welcome');
+  }
+
+  /** Whether a point (overlay coordinates) is on the pet. */
+  hitTest(pt: V): boolean {
+    if (!this.hatched) {
+      const s = this.eggSize;
+      return Math.abs(pt.x - this.x) < s * 0.4 && pt.y < this.y + 2 && pt.y > this.y - s;
+    }
+    const l = this.toLocal(pt);
+    // Generous: a few pixels around the body, every part at least finger-sized, and small or
+    // flying dinos anywhere in their box.
+    const px = this.px;
+    const pad = 8 / px;
+    const min = 7 / px;
+    if (this.rig.s.bounds && (this.heightPx < 70 || this.flying || this.rig.pose.fly > 0.3)) {
+      const b = this.rig.s.bounds;
+      const wing = this.species.features.wings && (this.flying || this.rig.pose.fly > 0.3) ? this.rig.reach * 0.35 : 0;
+      if (l.x > b.x1 - pad - wing * 0.4 && l.x < b.x2 + pad + wing * 0.4 && l.y > b.y1 - pad && l.y < b.y2 + pad + wing) return true;
+    }
+    return this.rig.hitCircles().some((c) => Math.hypot(c.p.x - l.x, c.p.y - l.y) <= Math.max(c.r, min) + pad);
+  }
+
+  /** Rig coordinates (x forward, y up) to overlay coordinates. */
+  toWorld(l: V, face = this.rig.face): V {
+    const dx = l.x * this.px * face;
+    const dy = -l.y * this.px;
+    const c = Math.cos(this.rot);
+    const s = Math.sin(this.rot);
+    return { x: this.x + dx * c - dy * s, y: this.y + dx * s + dy * c };
+  }
+
+  toLocal(pt: V): V {
+    const dx = pt.x - this.x;
+    const dy = pt.y - this.y;
+    const c = Math.cos(-this.rot);
+    const s = Math.sin(-this.rot);
+    const rx = dx * c - dy * s;
+    const ry = dx * s + dy * c;
+    return { x: (rx / this.px) * this.facing, y: -ry / this.px };
+  }
+
+  /** Where the head is (overlay coordinates), for emotes and speech. */
+  headAt(): V {
+    if (!this.hatched) return { x: this.x, y: this.y - this.eggSize };
+    const h = this.toWorld(this.rig.s.top);
+    // Emotes float above the head even while climbing.
+    return this.rot === 0 ? h : { x: h.x, y: Math.min(h.y, this.y) - this.heightPx * 0.2 };
+  }
+
+  mouthAt(): V {
+    return this.toWorld(this.rig.s.mouth);
+  }
+
+  poke() {
+    this.data.stats.pokes++;
+    if (!this.hatched) {
+      this.egg.crack = Math.min(1, this.egg.crack + 0.34);
+      this.egg.wobbleT = 0.6;
+      this.sound('crack');
+      return;
+    }
+    this.pokes = [...this.pokes.filter((t) => this.time - t < 4), this.time];
+    if (this.act.k === 'sleep') {
+      const grumpy = this.act.reason === 'nap';
+      this.wake(false);
+      if (grumpy) this.emote('anger');
+      return;
+    }
+    if (this.act.k === 'playdead') {
+      // Found out: it pops right back up.
+      if (this.act.stage < 3) {
+        this.act.stage = 3;
+        this.act.st = 0;
+      }
+      return;
+    }
+    if (this.act.k === 'held' || !this.grounded) return;
+    const annoyed = this.pokes.length >= 4;
+    // Armoured ones hunker down instead of growling.
+    if (annoyed && this.traits.moves.includes('curl')) {
+      this.pokes = [];
+      Moves.startMove(this, 'curl', false);
+      return;
+    }
+    this.react(annoyed ? 'annoyed' : 'poke');
+  }
+
+  /** The cursor moved `d` pixels while over the pet. Enough back-and-forth counts as petting. */
+  stroke(d: number) {
+    if (!this.hatched || this.held) return;
+    this.rub += d;
+    this.rubDecay = 0.6;
+    if (this.rub < 90 * Math.max(0.6, SIZE_SCALE[this.settings.size])) return;
+    this.rub = 0;
+    if (this.act.k === 'sleep') {
+      this.emote('note');
+      this.data.happiness = clamp(this.data.happiness + 0.01, 0, 1);
+      return;
+    }
+    if (this.act.k === 'petted') {
+      this.act.last = this.time;
+      return;
+    }
+    if (!this.grounded || this.act.k === 'eat' || this.act.k === 'jump') return;
+    this.data.stats.pets++;
+    this.data.happiness = clamp(this.data.happiness + 0.05, 0, 1);
+    this.act = { k: 'petted', t: 0, last: this.time, next: 0 };
+    this.say('pet');
+    this.sound('purr');
+    this.events.push({ type: 'save' });
+  }
+
+  grab(pt: V) {
+    this.held = true;
+    this.grounded = false;
+    this.rot = 0;
+    this.grabOff = { x: pt.x - this.x, y: pt.y - this.y };
+    this.dragHist = [{ x: pt.x, y: pt.y, t: this.time }];
+    this.vx = 0;
+    this.vy = 0;
+    if (this.hatched) {
+      Toys.dropToy(this);
+      this.act = { k: 'held', t: 0 };
+      this.sound('squeak');
+    }
+  }
+
+  drag(pt: V) {
+    if (!this.held) return;
+    const w = this.world;
+    const nx = clamp(pt.x - this.grabOff.x, this.margin * 0.5, w.width - this.margin * 0.5);
+    const ny = clamp(pt.y - this.grabOff.y, this.heightPx * 0.8, w.height);
+    this.rig.accel = clamp(((nx - this.x) / Math.max(1e-3, this.px)) * 30, -4000, 4000);
+    this.x = nx;
+    this.y = ny;
+    this.dragHist.push({ x: pt.x, y: pt.y, t: this.time });
+    if (this.dragHist.length > 12) this.dragHist.shift();
+  }
+
+  release() {
+    if (!this.held) return;
+    this.held = false;
+    const h = this.dragHist.filter((e) => this.time - e.t < 0.1);
+    let vx = 0;
+    let vy = 0;
+    if (h.length >= 2) {
+      const dt = Math.max(0.016, h[h.length - 1].t - h[0].t);
+      vx = (h[h.length - 1].x - h[0].x) / dt;
+      vy = (h[h.length - 1].y - h[0].y) / dt;
+    }
+    this.vx = clamp(vx, -2600, 2600);
+    this.vy = clamp(vy, -2600, 2600);
+    const fast = Math.hypot(this.vx, this.vy) > 700;
+    this.thrown = fast;
+    if (fast && this.hatched) {
+      this.data.stats.throws++;
+      this.say('thrown');
+      this.sound('boing');
+      const likes = this.species.personality.playfulness > 0.7;
+      this.data.happiness = clamp(this.data.happiness + (likes ? 0.02 : -0.02), 0, 1);
+    }
+    this.startFall(this.vy);
+  }
+
+  feed() {
+    if (!this.hatched) return;
+    const w = this.world;
+    const s = this.px;
+    const off = (60 + this.env.rand() * 120) * Math.max(0.7, s) * this.facing;
+    const x = clamp(this.x + off, 30, w.width - 30);
+    this.foods.push({ id: this.nextFoodId++, x, y: 0, vy: 0, landed: false, platform: null, left: 1, kind: this.species.food ?? (this.species.diet === 'carnivore' ? 'meat' : 'leaf') });
+    if (this.foods.length > 4) this.foods.shift();
+    this.sound('pop', true);
+    if (this.act.k === 'sleep') this.wake(false);
+  }
+
+  play() {
+    if (!this.hatched) return;
+    const w = this.world;
+    const r = Math.max(7, 9 * SIZE_SCALE[this.settings.size]);
+    const from = this.cursor && this.cursor.y < w.height - 10 ? this.cursor : { x: clamp(this.x + this.facing * 150, 20, w.width - 20), y: 20 };
+    this.ball = { x: from.x, y: Math.min(from.y, w.height - 40), vx: (this.env.rand() - 0.5) * 300, vy: -200, r, angle: 0, quiet: 0, age: 0, held: false };
+    this.sound('pop', true);
+    if (this.act.k === 'sleep') this.wake(false);
+  }
+
+  /** A trick asked for from the panel. */
+  trick(name: TrickName) {
+    if (!this.hatched || this.held) return;
+    if (this.act.k === 'sleep') {
+      this.wake(false);
+      this.pendingTrick = name;
+      return;
+    }
+    if (!this.grounded || this.anchored) {
+      // Mid-jump, flying or climbing: it does the trick as soon as it's back on its feet.
+      this.pendingTrick = name;
+      this.pendingTrickAt = this.time;
+      return;
+    }
+    this.pendingTrick = null;
+    this.vx = 0;
+    switch (name) {
+      case 'dance':
+        this.act = { k: 'dance', t: 0, dur: 5 + this.env.rand() * 2, next: 0.3 };
+        this.sound('happy');
+        break;
+      case 'roar':
+        this.react('roar');
+        break;
+      case 'spin':
+        this.act = { k: 'tail', t: 0, flip: 0 };
+        break;
+      case 'sit':
+        this.act = { k: 'sit', t: 0, dur: 12 + this.env.rand() * 8 };
+        break;
+      case 'shake':
+        this.act = { k: 'shake', t: 0 };
+        break;
+      case 'jump':
+        this.act = { k: 'leap', phase: 'crouch', t: 0, flip: this.traits.small || this.species.personality.jump > 0.6 };
+        break;
+      case 'bow':
+        this.act = { k: 'bow', t: 0 };
+        break;
+      case 'playdead':
+        Moves.startPlayDead(this);
+        break;
+    }
+  }
+
+  call() {
+    if (!this.hatched) return;
+    if (this.act.k === 'sleep') this.wake(false);
+    // Not while flying, climbing or held: that would drop it out of the air or out of your hand.
+    if (this.cursor && this.grounded && !this.anchored && !this.held) this.goTo(this.cursor.x, this.cursor.y, 'cursor', true);
+  }
+
+  sleepNow() {
+    if (this.hatched && this.act.k !== 'sleep') this.sleep('command');
+  }
+
+  wakeNow() {
+    if (this.act.k === 'sleep') this.wake(true);
+  }
+
+  hatchNow() {
+    if (!this.hatched) this.egg.crack = 1;
+  }
+
+  rename(name: string) {
+    this.data.name = name;
+    this.events.push({ type: 'save' });
+  }
+
+  /** Picked a growth stage by hand: resize right away, without a "grew up" announcement. */
+  setStage(stage: Stage) {
+    if (!this.hatched) return;
+    this.data.activeSeconds = stageSeconds(stage);
+    const g = growthOf(this.data.activeSeconds);
+    this.rig.setGrowth(g);
+    this.stageNow = stageOf(g);
+    this.growthTimer = 0;
+    this.events.push({ type: 'burst' }, { type: 'save' });
+    if (!this.hidden && this.act.k !== 'sleep' && this.grounded) this.react('happy');
+  }
+
+  // ---------------- the loop ----------------
+
+  /** Advance by `dt` seconds. Needs and growth use the real time (up to 5 s per call, so a slow
+   * tick while hidden still counts); motion runs in steps of at most 0.1 s, so a pet ticked at a
+   * low frame rate (asleep at 5 fps) keeps real time instead of slowing down. */
+  update(dt: number) {
+    const real = clamp(dt, 0, 5);
+    this.updateNeeds(real);
+    if (this.hidden) {
+      this.time += real;
+      this.hiddenFor += real;
+      return;
+    }
+    // At most a second of motion per call: a long stall isn't worth simulating step by step.
+    let left = Math.min(real, 1);
+    do {
+      const step = Math.min(left, 0.1);
+      this.step(step);
+      left -= step;
+    } while (left > 1e-6 && !this.hidden);
+  }
+
+  private step(dt: number) {
+    this.time += dt;
+    if (this.rubDecay > 0 && (this.rubDecay -= dt) <= 0) this.rub = 0;
+    this.updateFood(dt);
+    this.updateBall(dt);
+    Toys.updateToys(this, dt);
+    if (!this.hatched) {
+      this.updateEgg(dt);
+      this.physics(dt);
+      return;
+    }
+    this.think(dt);
+    this.physics(dt);
+    // Feed the rig.
+    const r = this.rig;
+    r.facing = this.facing;
+    r.speed = this.act.k === 'climb' ? (this.act.speed ?? this.climbSpeed) / this.px : this.grounded ? Math.abs(this.vx) / this.px : 0;
+    const accel = (this.vx - this.prevVx) / Math.max(dt, 1e-3);
+    this.prevVx = this.vx;
+    if (!this.held) r.accel = (accel / this.px) * this.facing + this.tailKick;
+    this.tailKick = Math.abs(this.tailKick) < 50 ? 0 : this.tailKick * Math.exp(-dt * 9);
+    r.look = this.lookTarget();
+    r.update(dt);
+    this.footsteps();
+    this.updateButterfly(dt);
+    Fidgets.updateGnat(this, dt);
+  }
+
+  /** Dust (and, for big pets, a thud) when a foot lands while running or walking heavily. */
+  private footsteps() {
+    const r = this.rig;
+    const n = r.steps - this.lastSteps;
+    this.lastSteps = r.steps;
+    if (n <= 0 || !this.grounded || this.rot !== 0) return;
+    const heavy = r.p.hipR * this.px >= 14;
+    const running = r.run > 0.5;
+    if (!heavy && !running) return;
+    const foot = this.toWorld({ x: r.stepX, y: 0 });
+    if (running ? this.env.rand() < 0.6 : this.env.rand() < 0.35) this.events.push({ type: 'dust', x: foot.x, y: this.y, big: false, small: true });
+    if (heavy && this.time - this.stepSoundAt > 0.22 && !this.quiet) {
+      this.stepSoundAt = this.time;
+      this.sound('step', true);
+    }
+  }
+
+  /** You're playing a game or watching a video: fewer idle noises. */
+  get quiet() {
+    return (!!this.game && this.settings.gameReactions) || (!!this.video && this.settings.videoReactions);
+  }
+
+  private updateButterfly(dt: number) {
+    const b = this.butterfly;
+    if (!b) {
+      const calm = this.grounded && !this.asleep && this.act.k !== 'eat' && this.act.k !== 'held' && !this.ball;
+      if (calm && (this.nextButterfly -= dt) <= 0) this.spawnButterfly();
+      return;
+    }
+    b.t += dt;
+    const r = this.env.rand;
+    const w = this.world;
+    if (b.leaving || b.t > 30) {
+      b.leaving = true;
+      b.vy -= 260 * dt;
+      b.vx += (b.x < w.width / 2 ? -1 : 1) * 120 * dt;
+    } else {
+      // Flutter around a point above the pet, with a lot of randomness.
+      const tx = this.x + Math.sin(b.t * 0.6) * 140;
+      const ty = this.y - this.heightPx * (1.5 + 0.6 * Math.sin(b.t * 1.1)) - 20;
+      b.vx += ((tx - b.x) * 0.9 + (r() - 0.5) * 900) * dt;
+      b.vy += ((ty - b.y) * 0.9 + (r() - 0.5) * 900 - 60 * Math.sin(b.t * 9)) * dt;
+    }
+    const sp = Math.hypot(b.vx, b.vy);
+    const max = b.leaving ? 320 : 170;
+    if (sp > max) {
+      b.vx *= max / sp;
+      b.vy *= max / sp;
+    }
+    b.vx *= 1 - dt * 0.8;
+    b.vy *= 1 - dt * 0.8;
+    b.x += b.vx * dt;
+    b.y = Math.min(b.y + b.vy * dt, this.y - 12);
+    if (b.leaving && (b.y < -60 || b.x < -60 || b.x > w.width + 60)) {
+      this.butterfly = null;
+      this.nextButterfly = 240 + r() * 480;
+    }
+  }
+
+  private spawnButterfly() {
+    const w = this.world;
+    const fromLeft = this.x > w.width / 2 ? this.env.rand() < 0.3 : this.env.rand() < 0.7;
+    this.butterfly = { x: fromLeft ? -30 : w.width + 30, y: Math.max(40, this.y - this.heightPx * 2.5 - 60), vx: fromLeft ? 120 : -120, vy: 0, t: 0, hue: Math.floor(this.env.rand() * 4), leaving: false };
+  }
+
+  private updateNeeds(dt: number) {
+    const d = this.data;
+    const active = !this.locked && this.userIdle < 60;
+    if (!this.hatched) return;
+    if (active) {
+      d.activeSeconds += dt * (this.settings.growthSpeed ?? 1);
+      d.togetherSeconds += dt;
+    }
+    const night = this.isNight();
+    if (this.act.k === 'sleep') d.energy += dt / (14 * 60);
+    else d.energy -= (dt / ((55 + 70 * this.species.personality.stamina) * 60)) * (night ? 1.5 : 1) * (this.hidden ? 0.5 : 1);
+    d.hunger += dt / ((this.act.k === 'sleep' ? 10 : 6) * 3600);
+    d.happiness += (0.55 - d.happiness) * (dt / (5 * 3600));
+    d.energy = clamp(d.energy, 0, 1);
+    d.hunger = clamp(d.hunger, 0, 1);
+    d.happiness = clamp(d.happiness, 0, 1);
+    if ((this.growthTimer += dt) >= 2) {
+      this.growthTimer = 0;
+      const g = growthOf(d.activeSeconds);
+      if (Math.abs(g - this.rig.growth) > 1e-6) this.rig.setGrowth(g);
+      const st = stageOf(g);
+      if (st !== this.stageNow) {
+        this.stageNow = st;
+        this.events.push({ type: 'grew', stage: st }, { type: 'save' });
+        if (!this.hidden && this.act.k !== 'sleep' && this.grounded) this.react('grow');
+      }
+    }
+  }
+
+  isNight() {
+    const h = this.env.hour();
+    return h >= 23 || h < 6;
+  }
+
+  private lookTarget(): V | null {
+    const a = this.act;
+    const px = this.px;
+    const toLocal = (p: V): V => ({ x: ((p.x - this.x) / px) * this.facing, y: (this.y - p.y) / px });
+    // The act says where to look.
+    if (this.lookAt !== undefined) return this.lookAt && this.toLocal(this.lookAt);
+    if (a.k === 'eat' || a.k === 'sleep' || a.k === 'climb' || a.k === 'move' || a.k === 'paw' || a.k === 'sneeze' || a.k === 'shake') return null;
+    if (a.k === 'special' || a.k === 'playdead' || a.k === 'bow' || a.k === 'forage' || a.k === 'fly' || a.k === 'cling' || a.k === 'leap') return null;
+    if (a.k === 'idle' && a.look) return a.look;
+    if (this.butterfly && (a.k === 'hunt' || a.k === 'watch' || a.k === 'idle' || a.k === 'sit')) return toLocal(this.butterfly);
+    if (a.k === 'gaze') return { x: 60, y: this.rig.height * 3 };
+    if (this.ball && (a.k === 'chase' || a.k === 'travel')) return toLocal(this.ball);
+    if (this.cursor) {
+      const d = Math.hypot(this.cursor.x - this.x, this.cursor.y - this.y);
+      const near = d < 420 + 260 * this.species.personality.curiosity;
+      const inFront = (this.cursor.x - this.x) * this.facing > -20;
+      if ((near && inFront) || a.k === 'watch' || a.k === 'follow' || a.k === 'petted' || a.k === 'held' || a.k === 'pounce' || a.k === 'dance' || (a.k === 'react' && a.kind !== 'roar')) return toLocal(this.cursor);
+    }
+    return null;
+  }
+
+  // ---------------- physics ----------------
+
+  startFall(vy: number, voluntary = false) {
+    this.grounded = false;
+    this.vy = vy;
+    this.wantDrop = false;
+    this.rot = 0;
+    const a = this.act;
+    const resume = a.k === 'travel' ? a : a.k === 'climb' ? a.resume : null;
+    if (resume && resume.k === 'travel') resume.drop = false;
+    if (a.k !== 'jump' && a.k !== 'egg' && a.k !== 'hatch') this.act = { k: 'fall', t: 0, resume, voluntary };
+  }
+
+  private physics(dt: number) {
+    if (this.held || this.anchored) return;
+    if (this.crossing && this.cross(dt)) return;
+    if (this.flying) {
+      Flight.flightPhysics(this, dt);
+      return;
+    }
+    const w = this.world;
+    const lo = this.margin * 0.5;
+    const hi = w.width - this.margin * 0.5;
+    if (!this.grounded) {
+      // Exact for constant gravity, so jump arcs reach the heights they were planned for.
+      let nx = this.x + this.vx * dt;
+      let ny = this.y + this.vy * dt + 0.5 * G * dt * dt;
+      this.vy += G * dt;
+      if (nx < lo) {
+        nx = lo;
+        this.vx = Math.abs(this.vx) * 0.45;
+        if (Math.abs(this.vx) > 300) this.bump();
+      } else if (nx > hi) {
+        nx = hi;
+        this.vx = -Math.abs(this.vx) * 0.45;
+        if (Math.abs(this.vx) > 300) this.bump();
+      }
+      const top = this.heightPx * 0.9;
+      if (ny < top) {
+        ny = top;
+        if (this.vy < 0) this.vy = Math.abs(this.vy) * 0.25;
+      }
+      if (this.vy > 0) {
+        const land = landingOn(this.platforms, nx, this.y, ny);
+        if (land) {
+          this.land(land, nx);
+          return;
+        }
+      }
+      this.x = nx;
+      this.y = ny;
+      if (this.y > w.height + 50) this.land(this.platforms.find((p) => p.id === GROUND) ?? ground(w.width, w.height), clamp(nx, lo, hi));
+      return;
+    }
+    // On the ground: move along the platform.
+    const p = this.platform;
+    this.x += this.vx * dt;
+    this.y = p.y;
+    const m = this.margin * 0.55;
+    if (this.x < p.x1 + m || this.x > p.x2 - m) {
+      if (this.wantDrop && (this.x < p.x1 || this.x > p.x2) && p.id !== GROUND) {
+        this.startFall(-80, true);
+        return;
+      }
+      if (!this.wantDrop) {
+        this.x = clamp(this.x, p.x1 + m, p.x2 - m);
+        this.vx = 0;
+      }
+    }
+    this.x = clamp(this.x, lo, hi);
+  }
+
+  private bump() {
+    this.emote('stars');
+    this.sound('thud');
+  }
+
+  land(p: Platform, x: number) {
+    const impact = this.vy;
+    this.grounded = true;
+    this.platform = p;
+    this.x = x;
+    this.y = p.y;
+    this.vy = 0;
+    this.vx *= 0.2;
+    this.wantDrop = false;
+    const hard = this.thrown && impact > 1300;
+    const wasThrown = this.thrown;
+    this.thrown = false;
+    this.events.push({ type: 'dust', x, y: p.y, big: hard }, { type: 'squash', amount: clamp(impact / 1800, 0.08, 0.35) });
+    if (!this.hatched) return;
+    if (impact > 700) this.sound('thud', impact < 1100);
+    if (hard) this.sound('yelp');
+    const a = this.act;
+    // Told to nap mid-hop: just keep sleeping once down.
+    if (a.k === 'sleep') return;
+    const resume = a.k === 'jump' || a.k === 'fall' ? a.resume : a.k === 'leap' ? Moves.leapLanded(this) : null;
+    this.act = { k: 'land', t: 0, hard, resume };
+    // Moves and games that jump do something when they land (a stomp, a squeak).
+    if (resume?.k === 'special') Moves.moveLanded(this, resume, impact);
+    else if (resume?.k === 'toy') Toys.toyLanded(this, resume);
+    // Shaking itself off after being thrown around.
+    if (wasThrown && !hard && !resume && this.env.rand() < 0.45) this.act.resume = { k: 'shake', t: 0 };
+  }
+
+  // ---------------- food and ball ----------------
+
+  private updateFood(dt: number) {
+    for (const f of this.foods) {
+      if (f.landed) continue;
+      const ny = f.y + f.vy * dt + 0.35 * G * dt * dt;
+      f.vy += G * 0.7 * dt;
+      // Only where it can stand: food on a window it can't reach would keep it waiting under it forever.
+      const land = landingOn(this.platforms.filter((p) => p.y > 30), f.x, f.y, ny);
+      if (land) {
+        f.landed = true;
+        f.platform = land;
+        f.y = land.y;
+        f.vy = 0;
+        this.events.push({ type: 'dust', x: f.x, y: land.y, big: false });
+      } else f.y = ny;
+    }
+  }
+
+  private updateBall(dt: number) {
+    const b = this.ball;
+    if (!b || b.held) return;
+    b.age += dt;
+    b.vy += G * 0.8 * dt;
+    let nx = b.x + b.vx * dt;
+    let ny = b.y + b.vy * dt;
+    const w = this.world;
+    if (nx < b.r || nx > w.width - b.r) {
+      nx = clamp(nx, b.r, w.width - b.r);
+      b.vx = -b.vx * 0.7;
+    }
+    if (ny < b.r) {
+      ny = b.r;
+      b.vy = Math.abs(b.vy) * 0.6;
+    }
+    if (b.vy > 0) {
+      const land = landingOn(this.world.platforms, nx, b.y, ny);
+      if (land) {
+        ny = land.y - 0.01;
+        if (b.vy > 160) {
+          b.vy = -b.vy * 0.62;
+          if (b.vy < -120) this.sound('boing');
+        } else b.vy = 0;
+        b.vx *= 0.985;
+        if (Math.abs(b.vx) < 8) b.vx = 0;
+      }
+    }
+    b.angle += (b.vx * dt) / b.r;
+    b.x = nx;
+    b.y = ny;
+    b.quiet = Math.abs(b.vx) < 5 && b.vy === 0 ? b.quiet + dt : 0;
+    if (b.age > 60 || b.quiet > 25) this.ball = null;
+  }
+
+  grabBall(pt: V) {
+    if (this.ball && Math.hypot(pt.x - this.ball.x, pt.y - (this.ball.y - this.ball.r)) < this.ball.r + 6) {
+      this.ball.held = true;
+      this.dragHist = [{ x: pt.x, y: pt.y, t: this.time }];
+      return true;
+    }
+    return false;
+  }
+
+  dragBall(pt: V) {
+    const b = this.ball;
+    if (!b?.held) return;
+    b.x = clamp(pt.x, b.r, this.world.width - b.r);
+    b.y = clamp(pt.y + b.r, b.r * 2, this.world.height);
+    this.dragHist.push({ x: pt.x, y: pt.y, t: this.time });
+    if (this.dragHist.length > 12) this.dragHist.shift();
+  }
+
+  releaseBall() {
+    const b = this.ball;
+    if (!b?.held) return;
+    b.held = false;
+    const h = this.dragHist.filter((e) => this.time - e.t < 0.1);
+    if (h.length >= 2) {
+      const dt = Math.max(0.016, h[h.length - 1].t - h[0].t);
+      b.vx = clamp((h[h.length - 1].x - h[0].x) / dt, -2200, 2200);
+      b.vy = clamp((h[h.length - 1].y - h[0].y) / dt, -2200, 2200);
+    }
+    b.age = 0;
+    b.quiet = 0;
+  }
+
+  /** Whether a point is on a toy you can pick up and throw (bone, duck). */
+  overToy(pt: V) {
+    return Toys.overToy(this, pt);
+  }
+
+  grabToy(pt: V) {
+    return Toys.grabToy(this, pt);
+  }
+
+  dragToy(pt: V) {
+    Toys.dragToy(this, pt);
+  }
+
+  releaseToy() {
+    Toys.releaseToy(this);
+  }
+
+  /** A click on a toy: squeezes the duck. Returns whether it hit one. */
+  tapToy(pt: V) {
+    return Toys.tapToy(this, pt);
+  }
+
+  // ---------------- egg ----------------
+
+  private updateEgg(dt: number) {
+    const e = this.egg;
+    const a = this.act;
+    if (a.k === 'hatch') {
+      a.t += dt;
+      e.open = Math.min(1, a.t / 0.7);
+      if (a.t >= 0.7) {
+        this.data.hatchedAt = this.env.now();
+        this.events.push({ type: 'hatched' }, { type: 'save' });
+        this.facing = this.x > this.world.width / 2 ? -1 : 1;
+        this.react('hello', 'hello');
+        this.emote('hearts');
+      }
+      return;
+    }
+    e.crack = Math.min(1, e.crack + dt / 45);
+    if (e.wobbleT > 0) e.wobbleT -= dt;
+    if (a.k === 'egg' && (a.next -= dt) <= 0) {
+      a.next = 1.5 + this.env.rand() * 3 * (1 - e.crack * 0.7);
+      e.wobbleT = 0.5 + e.crack * 0.4;
+    }
+    e.wobble = e.wobbleT > 0 ? Math.sin(this.time * 26) * 0.12 * (0.6 + e.crack) : 0;
+    if (e.crack >= 1 && a.k === 'egg') {
+      this.act = { k: 'hatch', t: 0 };
+      this.sound('hatch');
+    }
+  }
+
+  // ---------------- decisions ----------------
+
+  idleAct(dur: number): Extract<Act, { k: 'idle' }> {
+    return { k: 'idle', t: 0, dur, nextLook: 1, look: null, sniff: 0 };
+  }
+
+  sleep(reason: SleepReason) {
+    this.data.stats.naps++;
+    if (this.butterfly) this.butterfly.leaving = true;
+    const dur = reason === 'nap' ? 90 + this.env.rand() * 240 : reason === 'command' ? 30 * 60 : 1e9;
+    // Settling down takes a moment (a yawn, sit, lie down, head down); not when the PC locks.
+    const lying = this.act.k === 'lie' || this.act.k === 'sit';
+    const settle = reason === 'lock' || !this.grounded || this.anchored ? 0 : lying ? 1.4 : 3;
+    Toys.dropToy(this);
+    this.act = { k: 'sleep', reason, t: 0, dur, nextZ: 2.5, settle };
+    if (settle > 2) this.sound('yawn', true);
+    else if (settle > 0) this.sound('murmur', true);
+    this.vx = 0;
+  }
+
+  wake(welcome: boolean) {
+    this.act = { k: 'wake', t: 0, welcome };
+    this.sound('yawn');
+  }
+
+  react(kind: ReactKind, line?: LineEvent, soft = false, vars?: Record<string, string>) {
+    if (!this.hatched) return;
+    const dur = { roar: 1.6, happy: 1.6, poke: 0.9, welcome: 2.2, grow: 2.4, game: 2.8, hungry: 1.8, chirp: 0.9, annoyed: 1.3, hello: 2.2, video: 1.8 }[kind];
+    this.act = { k: 'react', kind, t: 0, dur };
+    this.vx = 0;
+    switch (kind) {
+      case 'roar':
+        this.sound('roar', soft);
+        break;
+      case 'game':
+        this.sound('roar');
+        this.emote('exclaim');
+        this.say('game', true, vars);
+        break;
+      case 'video':
+        this.sound('chirp', true);
+        this.emote(this.env.rand() < 0.5 ? 'exclaim' : 'note');
+        this.say('video', true, vars);
+        break;
+      case 'happy':
+        this.emote('heart');
+        this.sound('happy');
+        break;
+      case 'poke':
+        this.emote(this.env.rand() < 0.5 ? 'question' : 'exclaim');
+        this.sound('chirp');
+        this.say('poke');
+        break;
+      case 'annoyed':
+        this.emote('anger');
+        this.sound(this.species.diet === 'herbivore' ? 'huff' : 'growl');
+        this.pokes = [];
+        break;
+      case 'welcome':
+        this.emote('heart');
+        this.sound('happy');
+        this.say(line ?? 'welcome', true, vars);
+        break;
+      case 'hello':
+        this.sound('call');
+        this.say('hello', true);
+        break;
+      case 'grow':
+        this.emote('sparkle');
+        this.sound('grow');
+        this.events.push({ type: 'burst' });
+        this.say('grow', true);
+        break;
+      case 'hungry':
+        this.emote('food');
+        this.sound('whine');
+        break;
+      case 'chirp':
+        this.sound('call', soft);
+        this.emote('note');
+        break;
+    }
+  }
+
+  goTo(x: number, y: number, purpose: Purpose, run: boolean) {
+    const plats = this.platforms;
+    let target = landingOn(plats, clamp(x, 1, this.world.width - 1), y - 2, Infinity) ?? plats.find((p) => p.id === GROUND)!;
+    const m = this.margin * 0.6;
+    let tx = clamp(x, target.x1 + m, target.x2 - m);
+    if (target.x2 - target.x1 < m * 2) {
+      target = plats.find((p) => p.id === GROUND)!;
+      tx = clamp(x, m, this.world.width - m);
+    }
+    this.act = { k: 'travel', to: target, toX: tx, purpose, run, t: 0, drop: false };
+  }
+
+  choose() {
+    const r = this.env.rand;
+    const d = this.data;
+    const pers = this.species.personality;
+    // Asked for while it couldn't: its signature move or trick comes first.
+    if (this.pendingSpecial) {
+      const m = this.pendingSpecial;
+      this.pendingSpecial = null;
+      if (this.time - this.pendingSpecialAt < 20 && Moves.startMove(this, m, true)) return;
+    }
+    if (this.pendingTrick) {
+      const t = this.pendingTrick;
+      this.pendingTrick = null;
+      if (this.time - this.pendingTrickAt < 20 && this.grounded && !this.anchored) {
+        this.trick(t);
+        if (this.act.k !== 'idle') return;
+      }
+    }
+    const food = this.foods.find((f) => f.landed);
+    if (food) {
+      if (!Flight.flyToFood(this, food)) this.goTo(food.x, food.y, 'food', true);
+      return;
+    }
+    // Flyers snatch food out of the air as it falls.
+    const falling = this.foods.find((f) => !f.landed);
+    if (falling && Flight.flyToFood(this, falling)) return;
+    if (this.ball && d.energy > 0.15) {
+      this.act = { k: 'chase', t: 0 };
+      return;
+    }
+    // A toy that's out.
+    if (d.energy > 0.15 && this.toys.length && Toys.toyChoice(this)) return;
+    if (d.energy < 0.2 || (this.isNight() && d.energy < 0.45 && r() < 0.25)) {
+      if (!Social.napNearFriend(this)) this.sleep('nap');
+      return;
+    }
+    if (d.hunger > 0.75 && this.time > this.hungryNag) {
+      this.hungryNag = this.time + 15 * 60;
+      this.react('hungry');
+      return;
+    }
+    const baby = this.rig.baby;
+    const c = this.cursor;
+    const cursorNear = !!c && Math.hypot(c.x - this.x, c.y - this.y) < 500;
+    const others = this.platforms.filter((p) => p.id !== this.platform.id);
+    const tired = 1 - d.energy;
+    const b = this.butterfly;
+    if (b && !b.leaving && Math.abs(b.x - this.x) < 600 && d.energy > 0.2 && r() < 0.35 + 0.6 * pers.playfulness) {
+      // Flyers go after it on the wing.
+      if (this.winged && r() < 0.75 && Flight.startFlight(this, 'butterfly')) return;
+      this.act = { k: 'hunt', t: 0, snap: 0 };
+      return;
+    }
+    const pl = this.platform;
+    // The cursor is at about the pet's level on this platform (to follow it or pounce on it).
+    const cursorLevel = !!c && c.y > pl.y - this.heightPx * 2 && c.y < pl.y + 40 && c.x > pl.x1 && c.x < pl.x2;
+    const pounceOk = cursorLevel && this.cursorSpeed < 40 && Math.abs(c!.x - this.x) > this.heightPx * 0.8 && Math.abs(c!.x - this.x) < this.heightPx * 3.2 + 60 && c!.y > pl.y - this.heightPx * 1.8;
+    const f = this.species.features;
+    const charger = !!(f.frill || f.dome || f.armor || f.club || f.horns || f.browHorns);
+    const loud = this.species.voice.kind === 'roar' || this.species.voice.kind === 'bellow' || this.species.voice.kind === 'honk';
+    const activity = this.settings.activity;
+    const lively = activity === 'lively' ? 1 : activity === 'normal' ? 0.5 : 0;
+    const pace = this.pace;
+    const night = this.isNight();
+    const happy = d.happiness;
+    const menu: Record<string, Option[]> = {
+      rest: [
+        [3, 'idle', () => (this.act = this.idleAct((2 + r() * 4) * pace))],
+        [1.2 + tired * 2, 'sit', () => (this.act = { k: 'sit', t: 0, dur: (6 + r() * 14) * pace })],
+        [0.4 + tired * 3, 'lie', () => (this.act = { k: 'lie', t: 0, dur: (8 + r() * 18) * pace })],
+        [night || d.energy < 0.35 ? 1.5 : 0, 'nap', () => Social.napNearFriend(this) || this.sleep('nap')],
+      ],
+      move: [
+        [2.2, 'walk', () => this.wander(false)],
+        [0.6 + 1.6 * lively * pers.speed, 'run', () => this.wander(true)],
+        [pl.x2 - pl.x1 > 400 ? 1 : 0, 'patrol', () => this.patrol()],
+        [cursorLevel && Math.abs(c!.x - this.x) > this.margin * 2 ? 1 + pers.curiosity : 0, 'follow', () => (this.act = { k: 'follow', t: 0 })],
+      ],
+      play: [
+        [d.energy > 0.4 ? 1 : 0.3, 'zoomies', () => (this.act = { k: 'zoomies', t: 0, laps: 1 + Math.floor(r() * 2), toX: this.x })],
+        [0.6 + baby, 'tail', () => (this.act = { k: 'tail', t: 0, flip: 0 })],
+        [happy > 0.5 ? 1.6 : 0.6, 'dance', () => (this.act = { k: 'dance', t: 0, dur: 3.5 + r() * 2.5, next: 0.4 })],
+        [1.2 * (0.3 + pers.jump), 'hop', () => (this.act = { k: 'hop', t: 0, n: 2 + Math.floor(r() * 3), next: 0.15 })],
+        [pounceOk ? 3 * (0.4 + pers.curiosity) : 0, 'pounce', () => (this.act = { k: 'pounce', phase: 'ready', t: 0, wait: 0.8 + r() * 0.7, tx: c!.x })],
+      ],
+      express: [
+        [0.8 + pers.vocal * 1.5, 'call', () => this.react(this.growth > 0.5 && loud ? 'roar' : 'chirp', undefined, true)],
+        [1.2, 'sniff', () => {
+          this.act = { ...this.idleAct(2.5 * pace), sniff: 1.6 };
+          this.sound('sniff', true);
+        }],
+        [charger ? 1.6 : 0.5, 'paw', () => (this.act = { k: 'paw', t: 0, charge: charger && d.energy > 0.4 && r() < 0.35 + 0.5 * lively, next: 0.2 })],
+        [0.3, 'sneeze', () => (this.act = { k: 'sneeze', t: 0, done: false })],
+        [0.8, 'shake', () => (this.act = { k: 'shake', t: 0 })],
+        [0.8, 'stretch', () => (this.act = { k: 'stretch', t: 0 })],
+        [0.9, 'gaze', () => (this.act = { k: 'gaze', t: 0, dur: 2 + r() * 2 })],
+      ],
+      social: [[cursorNear ? 1 : 0, 'watch', () => (this.act = { k: 'watch', t: 0, dur: (3 + r() * 5) * (0.6 + 0.4 * pace) })]],
+      explore: [[others.length && this.settings.explore ? 1 : 0, 'explore', () => this.explore(others)]],
+    };
+    // Its signature moves, habits and fidgets, flying, climbing walls, friends and videos.
+    for (const extra of [Moves.options(this), Fidgets.options(this), Flight.options(this), Walls.options(this), Social.options(this)]) {
+      for (const [cat, list] of Object.entries(extra)) if (list && menu[cat]) menu[cat].push(...list);
+    }
+    const has = (cat: string) => menu[cat].some(([w]) => w > 0);
+    const catW: Record<string, number> = {
+      rest: (activity === 'calm' ? 3.2 : activity === 'normal' ? 2 : 1.1) + tired * 3 + (night ? 1.5 : 0),
+      move: 1.4 + d.energy * 0.6,
+      play: (0.3 + 3 * lively) * (0.4 + pers.playfulness) * (0.2 + d.energy) * (0.5 + happy),
+      express: 0.9 + 0.6 * lively + pers.vocal * 0.4,
+      social: has('social') ? (cursorNear ? 1.2 * (0.5 + pers.curiosity) : 0) + Social.weight(this) : 0,
+      // Exploring windows; digging and the like count too, a little.
+      explore: (others.length && this.settings.explore ? (0.6 + 1.8 * lively) * (0.35 + pers.jump) * d.energy : 0) + (has('explore') ? 0.35 * (0.3 + d.energy) : 0),
+    };
+    // Gaming: calmer and quieter. Watching a video: calmer.
+    if (this.game && this.settings.gameReactions) {
+      catW.rest *= 1.8;
+      catW.play *= 0.35;
+      catW.express *= 0.5;
+      catW.explore *= 0.4;
+      catW.move *= 0.7;
+    }
+    if (this.video && this.settings.videoReactions) {
+      catW.play *= 0.6;
+      catW.explore *= 0.6;
+    }
+    // Variety: the same kind of thing twice in a row is less likely, the same behaviour never.
+    if (this.lastCat in catW) catW[this.lastCat] *= 0.45;
+    const usable = (cat: string) => menu[cat].filter(([w, name]) => w > 0 && (name !== this.lastBeh || menu[cat].length === 1));
+    const cat = pickWeighted(r, Object.entries(catW).map(([k, w]) => [usable(k).length ? w : 0, k] as const));
+    const options = cat ? usable(cat) : [];
+    const choice = pickWeighted(r, options.map((o) => [o[0], o] as const));
+    if (!cat || !choice) {
+      this.act = this.idleAct(3 * pace);
+      return;
+    }
+    this.lastCat = cat;
+    this.lastBeh = choice[1];
+    // About to rest right on top of another pet: move over a bit first.
+    const crowd = cat === 'rest' ? Social.crowded(this) : undefined;
+    if (crowd) {
+      Social.shuffleAway(this, crowd);
+      return;
+    }
+    choice[2]();
+  }
+
+  /** Trot off towards the far side of the platform (not too far) and have a look around. */
+  private patrol() {
+    const p = this.platform;
+    const m = this.margin * 0.7;
+    const dirn = this.x - p.x1 > p.x2 - this.x ? -1 : 1;
+    const toX = clamp(this.x + dirn * 450 * Math.max(0.7, this.px), p.x1 + m, p.x2 - m);
+    this.act = { k: 'walk', toX, run: this.env.rand() < 0.4, dur: 12, t: 0 };
+  }
+
+  wander(run: boolean) {
+    const p = this.platform;
+    const m = this.margin * 0.6;
+    const span = p.x2 - p.x1 - 2 * m;
+    if (span < 10) {
+      this.act = this.idleAct(3);
+      return;
+    }
+    const reach = Math.min(span, (run ? 500 : 260) * Math.max(0.6, this.px));
+    const toX = clamp(this.x + (this.env.rand() * 2 - 1) * reach, p.x1 + m, p.x2 - m);
+    this.act = { k: 'walk', toX, run, dur: 20, t: 0 };
+  }
+
+  explore(others: Platform[]) {
+    const r = this.env.rand;
+    const reachable = others.filter((q) => route(this.platforms, this.world.walls, this.platform, this.x, q, (q.x1 + q.x2) / 2, this.abilities));
+    if (!reachable.length) {
+      this.wander(false);
+      return;
+    }
+    const p = reachable[Math.floor(r() * reachable.length)];
+    const m = this.margin * 0.6;
+    this.act = { k: 'travel', to: p, toX: p.x1 + m + r() * Math.max(0, p.x2 - p.x1 - 2 * m), purpose: 'explore', run: false, t: 0, drop: false };
+  }
+
+  /** Slows to a stop. */
+  brake(dt: number) {
+    this.vx *= Math.max(0, 1 - dt * 12);
+  }
+
+  /** Sets a pose value right away, without easing (fast flaps, snaps, head shakes). Call after pose(). */
+  snap(key: keyof Pose, v: number) {
+    this.rig.pose[key] = v;
+    this.rig.target[key] = v;
+  }
+
+  /** Walk (or run, `mul` times as fast) toward x on the current platform; returns true when arrived. */
+  walkTo(x: number, run: boolean, dt: number, mul = 1): boolean {
+    const dx = x - this.x;
+    const speed = (run ? this.runSpeed : this.walkSpeed) * mul;
+    if (Math.abs(dx) < Math.max(3, speed * dt * 1.5)) {
+      this.vx = 0;
+      return true;
+    }
+    const dirn = dx > 0 ? 1 : -1;
+    if (dirn !== this.facing && Math.abs(this.vx) < speed * 0.3) this.facing = dirn;
+    const target = dirn * speed * (Math.abs(dx) < speed * 0.3 ? 0.5 : 1);
+    this.vx += clamp(target - this.vx, -speed * 6 * dt, speed * 6 * dt);
+    return false;
+  }
+
+  pose(name: PoseName, extra?: Parameters<typeof applyPose>[2]) {
+    applyPose(this.rig, name, extra);
+  }
+
+  private think(dt: number) {
+    const a = this.act;
+    const r = this.env.rand;
+    const rig = this.rig;
+    rig.run = 0;
+    this.fast = false;
+    this.lookAt = undefined;
+    // Only acts on walls (or playing dead) draw it rotated: anything else stands it up again.
+    if (this.rot !== 0 && !ROTATED.has(a.k) && !this.held) {
+      this.rot = 0;
+      if (this.grounded) this.y = this.platform.y;
+    }
+    if (!MOVING.has(a.k) && this.grounded) this.vx *= Math.max(0, 1 - dt * 12);
+    this.wantDrop = a.k === 'travel' && a.drop;
+    // Food beats whatever it was doing (except eating, sleeping, or being mid-air or mid-climb).
+    if (this.grounded && !this.held && (INTERRUPTIBLE.has(a.k) || (a.k === 'special' && Moves.yieldsToFood(a))) && !(a.k === 'travel' && (a.purpose === 'food' || a.drop))) {
+      const food = this.foods.find((f) => f.landed);
+      if (food) {
+        if (!Flight.flyToFood(this, food)) this.goTo(food.x, food.y, 'food', true);
+        return;
+      }
+    }
+    // Other pets doing something it wants to join in with (tag, a roar-off, a trick to copy).
+    if (this.grounded && !this.held && this.friends.length && INTERRUPTIBLE.has(a.k) && a.k !== 'travel' && Social.socialInterrupt(this)) return;
+    switch (a.k) {
+      case 'egg':
+      case 'hatch':
+        return;
+      case 'idle': {
+        a.t += dt;
+        this.pose(a.sniff > 0 ? 'sniff' : a.sniff < 0 ? 'yawn' : 'stand');
+        if (a.sniff > 0) a.sniff = Math.max(0, a.sniff - dt);
+        else if (a.sniff < 0) a.sniff = Math.min(0, a.sniff + dt);
+        if ((a.nextLook -= dt) <= 0) {
+          a.nextLook = 1.2 + r() * 2.8;
+          const k = r();
+          a.look = k < 0.35 ? null : k < 0.55 ? { x: 60 + r() * 60, y: 60 + r() * 60 } : k < 0.75 ? { x: 80, y: r() * 20 } : { x: -40, y: 70 };
+          if (k > 0.92) {
+            a.sniff = 1.4;
+            this.sound('sniff', true);
+          } else if (k < 0.1 && this.data.energy < 0.3) {
+            // Tired: a big yawn (negative sniff time means yawning).
+            a.sniff = -1.6;
+            this.sound('yawn', true);
+          }
+          if (k > 0.97 && r() < 0.5) this.facing = this.facing === 1 ? -1 : 1;
+        }
+        if (a.t > a.dur) this.choose();
+        return;
+      }
+      case 'walk':
+        a.t += dt;
+        rig.run = a.run ? 1 : 0;
+        if (a.style === 'lurk') this.pose('lurk');
+        else this.pose('stand', a.charge ? { neck: -0.25, head: -0.25, tailLift: 0.25, pitch: -0.05 } : undefined);
+        // A friend resting in the way: hop over it.
+        if (this.friends.length && Social.hopOver(this)) return;
+        if (this.walkTo(a.toX, a.run, dt, a.style === 'lurk' ? 0.55 : 1) || a.t > a.dur) {
+          this.act = this.idleAct((1 + r() * 3) * this.pace);
+          if (a.charge) {
+            // Skid to a stop.
+            this.events.push({ type: 'dust', x: this.x + this.facing * this.margin, y: this.y, big: true });
+            this.sound('thud', true);
+          }
+        }
+        return;
+      case 'travel': {
+        a.t += dt;
+        if (!this.grounded) return;
+        rig.run = a.run ? 1 : 0;
+        this.pose('stand');
+        if (a.drop) {
+          // Committed to walking off the edge; physics starts the fall.
+          this.wantDrop = true;
+          this.vx = this.facing * this.walkSpeed * 0.8;
+          if (a.t > 25) a.drop = false;
+          return;
+        }
+        // Gives up eventually, but a small hatchling crossing a wide screen needs more than 25 s.
+        if (a.t > Math.max(25, (2.5 * this.world.width) / Math.max(1, a.run ? this.runSpeed : this.walkSpeed))) {
+          this.emote('question');
+          this.act = this.idleAct(2);
+          return;
+        }
+        if (a.purpose === 'food' && !this.foods.some((f) => f.landed)) {
+          this.act = this.idleAct(1);
+          return;
+        }
+        const plats = this.platforms;
+        const to = plats.find((p) => p.id === a.to.id) ?? (a.to.win ? plats.find((p) => p.win === a.to.win) : undefined);
+        if (!to) {
+          this.act = this.idleAct(1);
+          return;
+        }
+        a.to = to;
+        const m = this.margin * 0.6;
+        a.toX = clamp(a.toX, to.x1 + m, to.x2 - m);
+        const hop = route(plats, this.world.walls, this.platform, this.x, to, a.toX, this.abilities);
+        if (!hop) {
+          this.emote('question');
+          this.act = this.idleAct(2);
+          return;
+        }
+        if (hop.kind === 'walk') {
+          a.drop = false;
+          if (this.walkTo(a.toX, a.run, dt)) this.arrive(a.purpose);
+          return;
+        }
+        if (hop.kind === 'drop') {
+          a.drop = false;
+          if (this.walkTo(hop.fromX, a.run, dt)) {
+            a.drop = true;
+            this.wantDrop = true;
+            this.facing = hop.toX < this.x ? -1 : 1;
+            this.vx = this.facing * this.walkSpeed * 0.8;
+          }
+          return;
+        }
+        a.drop = false;
+        if (hop.kind === 'climbUp' || hop.kind === 'climbDown') {
+          if (this.walkTo(hop.fromX, a.run, dt)) this.startClimb(hop.wall, hop.kind === 'climbUp' ? 'up' : 'down', hop.to, a);
+          return;
+        }
+        if (this.walkTo(hop.fromX, a.run, dt)) {
+          this.facing = hop.toX > this.x + 1 ? 1 : hop.toX < this.x - 1 ? -1 : this.facing;
+          this.act = { k: 'jump', phase: 'crouch', t: 0, tx: hop.toX, to: hop.to, resume: a };
+        }
+        return;
+      }
+      case 'move': {
+        a.t += dt;
+        const k = Math.min(1, a.t / a.dur);
+        const e = k * k * (3 - 2 * k);
+        this.x = a.from.x + (a.to.x - a.from.x) * e;
+        this.y = a.from.y + (a.to.y - a.from.y) * e - Math.sin(Math.PI * k) * a.arc;
+        this.rot = a.r0 + (a.r1 - a.r0) * e;
+        this.vx = 0;
+        this.vy = 0;
+        rig.speed = 0;
+        this.pose(a.arc > 4 ? 'jump' : 'stand');
+        if (k >= 1) {
+          this.rot = a.r1;
+          if (a.platform) {
+            this.grounded = true;
+            this.platform = a.platform;
+            this.y = a.platform.y;
+          }
+          this.act = a.next;
+        }
+        return;
+      }
+      case 'climb': {
+        a.t += dt;
+        const w = a.wall;
+        const speed = a.speed ?? this.climbSpeed;
+        this.x = w.x;
+        this.y += (a.dir === 'up' ? -1 : 1) * speed * dt;
+        this.vx = 0;
+        this.pose('stand', { tailLift: 0.15 });
+        const left = w.side === 'left';
+        // Climbing for fun: stop partway up and cling on (right away when there's food: it gets down).
+        if (a.dir === 'up' && a.stopY !== undefined && (this.y <= a.stopY || this.foods.length)) {
+          Walls.startCling(this, w, a.land);
+          return;
+        }
+        if (a.t > 60) {
+          this.rot = 0;
+          this.startFall(0);
+          return;
+        }
+        if (a.dir === 'up' && this.y <= w.y1 + this.margin * 0.5) {
+          const top = a.top;
+          if (!top) {
+            this.startFall(0);
+            return;
+          }
+          const m = this.margin * 0.8;
+          const tx = Math.min(Math.max(left ? w.x + m : w.x - m, top.x1 + m * 0.5), top.x2 - m * 0.5);
+          this.facing = left ? 1 : -1;
+          this.act = { k: 'move', t: 0, dur: 0.35, from: { x: this.x, y: this.y }, to: { x: tx, y: top.y }, r0: this.rot, r1: 0, arc: this.heightPx * 0.25, next: a.resume ?? this.idleAct(1), platform: top, wall: null };
+          return;
+        }
+        if (a.dir === 'down') {
+          const floor = a.land ? Math.min(a.land.y, w.y2) : w.y2;
+          if (this.y >= floor - this.reach * 0.85) {
+            const foot = wallFoot(w, this.margin);
+            this.facing = left ? -1 : 1;
+            if (a.land && a.land.y <= w.y2 + this.reach) {
+              this.act = { k: 'move', t: 0, dur: 0.3, from: { x: this.x, y: this.y }, to: { x: foot, y: a.land.y }, r0: this.rot, r1: 0, arc: 0, next: a.resume ?? this.idleAct(1), platform: a.land, wall: null };
+            } else {
+              this.x = foot;
+              this.vx = this.facing * 30;
+              this.startFall(0, true);
+            }
+          }
+        }
+        return;
+      }
+      case 'jump': {
+        a.t += dt;
+        if (a.phase === 'crouch') {
+          this.pose('crouch');
+          this.vx = 0;
+          if (a.t > 0.2) {
+            const dx = a.tx - this.x;
+            const apex = Math.min(this.y, a.to.y) - (30 + Math.abs(dx) * 0.2) * Math.max(0.8, this.px);
+            const h1 = Math.max(4, this.y - apex);
+            const h2 = Math.max(4, a.to.y - apex);
+            const t1 = Math.sqrt((2 * h1) / G);
+            const t2 = Math.sqrt((2 * h2) / G);
+            this.vy = -Math.sqrt(2 * G * h1);
+            this.vx = dx / (t1 + t2);
+            this.grounded = false;
+            a.phase = 'air';
+            a.t = 0;
+            this.events.push({ type: 'dust', x: this.x, y: this.y, big: false }, { type: 'squash', amount: -0.12 });
+            if (h1 > this.heightPx * 1.5) this.sound('whoosh', true);
+          }
+        } else this.pose('jump');
+        return;
+      }
+      case 'fall':
+        a.t += dt;
+        // Flyers catch themselves on the wing.
+        if (!a.voluntary && a.t > 0.25 && this.winged && Flight.catchAir(this)) return;
+        this.pose(!a.voluntary && (a.t > 0.25 || this.vy > 900) ? 'fall' : 'jump');
+        // Jumping for a bubble: it pops on the snout.
+        if (a.resume?.k === 'toy') Toys.airborne(this, a.resume);
+        if (a.t > 12) {
+          // Never stuck falling (something odd with the world): put it down on the taskbar.
+          const g = this.world.platforms.find((q) => q.id === GROUND) ?? ground(this.world.width, this.world.height);
+          this.land(g, clamp(this.x, this.margin, this.world.width - this.margin));
+        }
+        return;
+      case 'land':
+        a.t += dt;
+        this.pose('land');
+        if (a.t > (a.hard ? 0.35 : 0.18)) {
+          if (a.hard) {
+            this.act = { k: 'dizzy', t: 0 };
+            this.emote('stars');
+          } else if (a.resume) this.act = a.resume;
+          else this.act = this.idleAct(0.5 + r());
+        }
+        return;
+      case 'held':
+        a.t += dt;
+        this.pose('held', { pitch: 0.35 + clamp(-rig.accel * 0.0002, -0.4, 0.4) });
+        if (this.species.personality.playfulness > 0.7 && a.t > 1) rig.eyes = 'happy';
+        return;
+      case 'dizzy':
+        a.t += dt;
+        this.pose('dizzy');
+        if (a.t > 2) this.act = this.idleAct(1);
+        return;
+      case 'sit':
+      case 'lie':
+        a.t += dt;
+        // Lying down goes by way of sitting.
+        this.pose(a.k === 'lie' && a.t < 0.5 ? 'sit' : a.k);
+        if (a.t > a.dur) {
+          if (a.k === 'lie' && this.data.energy < 0.5 && r() < 0.5) this.sleep('nap');
+          else this.choose();
+        }
+        return;
+      case 'sleep': {
+        a.t += dt;
+        const s = a.t - a.settle;
+        if (s < 0) {
+          // Settling down: a yawn, sit, lie down with the head still up, then the head goes down.
+          const u = a.t / a.settle;
+          const standing = a.settle > 2;
+          if (standing && u < 0.28) this.pose('yawn');
+          else if (standing && u < 0.5) this.pose('sit');
+          else if (u < 0.78) this.pose('lie');
+          else this.pose('drowsy');
+          // Small, quick ones turn round once before lying down.
+          if (standing && (this.traits.small || this.traits.raptor || this.traits.feathered) && u >= 0.45 && (a.t - dt) / a.settle < 0.45) this.facing = this.facing > 0 ? -1 : 1;
+        } else this.pose(s < 2.5 ? 'drowsy' : 'sleep');
+        if (s > 2.5 && (a.nextZ -= dt) <= 0) {
+          // Fewer z's once it's deep asleep (each one is a small animation to draw).
+          a.nextZ = (s < 60 ? 2.8 : 7) + r() * 1.5;
+          this.emote('zzz');
+          if (r() < 0.15) this.sound('snore');
+        }
+        const rested = a.reason === 'nap' && this.data.energy > 0.96;
+        if (a.t > a.dur || rested) this.wake(false);
+        return;
+      }
+      case 'wake':
+        a.t += dt;
+        // Head up, up on its feet with a big stretch, a yawn.
+        this.pose(a.t < 0.45 ? 'drowsy' : a.t < 0.8 ? 'lie' : a.t < 1.6 ? 'stretch' : a.t < 2.2 ? 'yawn' : 'stand');
+        if (a.t > 2.5) {
+          const trick = this.pendingTrick;
+          this.pendingTrick = null;
+          const move = this.pendingSpecial;
+          this.pendingSpecial = null;
+          if (trick) this.trick(trick);
+          else if (move) {
+            if (!Moves.startMove(this, move, true)) this.act = this.idleAct(1);
+          } else if (a.welcome) this.react('welcome');
+          else if (r() < 0.35) this.act = { k: 'shake', t: 0 };
+          else this.act = this.idleAct(1);
+        }
+        return;
+      case 'watch':
+        a.t += dt;
+        if (this.cursor && this.cursorSpeed < 30 && Math.hypot(this.cursor.x - this.x, this.cursor.y - this.y) < 360) {
+          if ((this.curiousFlip -= dt) <= 0) this.curiousFlip = 1.4 + r() * 1.2;
+          this.pose('curious', { tilt: this.curiousFlip > 0.8 ? 0.3 : -0.12 });
+        } else this.pose('alert');
+        if (this.cursor) {
+          const dirn = this.cursor.x > this.x ? 1 : -1;
+          if (dirn !== this.facing && Math.abs(this.cursor.x - this.x) > this.margin) this.facing = dirn;
+          if (this.cursorSpeed > 1500 && this.species.personality.curiosity > 0.7 && this.grounded) {
+            this.vy = -380 * Math.max(0.6, this.px);
+            this.grounded = false;
+            this.act = { k: 'fall', t: 0, resume: null, voluntary: true };
+            return;
+          }
+        }
+        if (a.t > a.dur || !this.cursor) this.choose();
+        return;
+      case 'react': {
+        a.t += dt;
+        const k = a.kind;
+        // A game starting: a roar, then an excited little cheer.
+        const cheer = k === 'game' && a.t > 1.5;
+        if ((k === 'roar' || k === 'game') && !cheer) this.pose(a.t < 0.3 ? 'crouch' : a.t < 1.5 ? 'roar' : 'stand');
+        else if (k === 'video') this.pose('curious', { tilt: 0.25 });
+        else if (k === 'happy' || k === 'welcome' || k === 'hello' || k === 'grow' || cheer) {
+          this.pose(cheer ? 'cheer' : 'happy');
+          // Little hops.
+          if (this.grounded && a.t > 0.2 && a.t < a.dur - 0.4 && Math.floor(a.t * 2.5) !== Math.floor((a.t - dt) * 2.5)) {
+            this.vy = -260 * Math.max(0.6, this.px);
+            this.grounded = false;
+            this.act = { k: 'fall', t: 0, resume: a, voluntary: true };
+          }
+        } else if (k === 'poke') this.pose('alert');
+        else if (k === 'annoyed') this.pose(a.t < 1 ? 'roar' : 'stand', { jaw: 0.4, tremble: 0.3 });
+        else if (k === 'hungry') this.pose('look_up');
+        else if (k === 'chirp') this.pose(a.t < 0.5 ? 'chirp' : 'stand');
+        if (a.t > a.dur) this.act = this.idleAct(1 + r() * 2);
+        return;
+      }
+      case 'eat': {
+        const food = this.foods.find((f) => f.id === a.food);
+        if (!food) {
+          this.act = this.idleAct(1);
+          return;
+        }
+        a.t += dt;
+        const chomp = 0.15 + 0.45 * (0.5 + 0.5 * Math.sin(a.t * 14));
+        this.pose('eat', { jaw: chomp });
+        food.left -= dt / 3;
+        if ((a.next -= dt) <= 0) {
+          a.next = 0.45;
+          const m = this.mouthAt();
+          this.events.push({ type: 'crumbs', x: m.x, y: m.y });
+          this.sound('crunch');
+        }
+        if (food.left <= 0) {
+          this.foods = this.foods.filter((f) => f.id !== food.id);
+          if (food.golden) {
+            this.ateTreat();
+            return;
+          }
+          this.data.hunger = Math.max(0, this.data.hunger - 0.6);
+          this.data.happiness = clamp(this.data.happiness + 0.15, 0, 1);
+          this.data.stats.meals++;
+          this.events.push({ type: 'save' });
+          this.sound('gulp');
+          this.say('feed');
+          this.react('happy');
+        }
+        return;
+      }
+      case 'chase': {
+        a.t += dt;
+        const b = this.ball;
+        if (!b || a.t > 30) {
+          this.act = this.idleAct(1);
+          return;
+        }
+        rig.run = 1;
+        this.pose('stand', { tailLift: 0.3 });
+        if (b.held) {
+          this.vx *= 0.9;
+          if (Math.abs(b.x - this.x) > 20) this.facing = b.x > this.x ? 1 : -1;
+          return;
+        }
+        const onMine = Math.abs(b.y - this.platform.y) < 6 && b.x > this.platform.x1 && b.x < this.platform.x2;
+        if (!onMine) {
+          if (b.vy === 0 && Math.abs(b.vx) < 30) this.goTo(b.x, b.y - 2, 'ball', true);
+          else this.walkTo(clamp(b.x, this.platform.x1 + this.margin, this.platform.x2 - this.margin), true, dt);
+          return;
+        }
+        const reach = (this.rig.p.headLen * 0.9 + this.rig.p.bodyLen * 0.5) * this.px;
+        if (Math.abs(b.x - this.x) < reach && b.vy === 0) {
+          b.vx = this.facing * (320 + r() * 380);
+          b.vy = -260 - r() * 260;
+          this.sound('boing');
+          this.data.happiness = clamp(this.data.happiness + 0.02, 0, 1);
+          if (r() < 0.3) this.emote('note');
+          this.vx *= 0.3;
+        } else this.walkTo(b.x - this.facing * reach * 0.6, true, dt);
+        return;
+      }
+      case 'zoomies': {
+        a.t += dt;
+        rig.run = 1;
+        this.pose('happy');
+        const p = this.platform;
+        const m = this.margin * 0.7;
+        if (this.walkTo(a.toX, true, dt)) {
+          a.laps--;
+          // Dash back and forth over a stretch of the platform, not the whole screen.
+          const span = Math.min(p.x2 - p.x1 - 2 * m, 520 * Math.max(0.7, this.px));
+          a.toX = clamp(this.x + (a.toX > this.x ? -1 : 1) * span * (0.6 + 0.4 * this.env.rand()), p.x1 + m, p.x2 - m);
+          if (a.laps < 0 || a.t > 7) this.act = this.idleAct(1.5 * this.pace);
+        }
+        return;
+      }
+      case 'tail':
+        a.t += dt;
+        this.pose('happy', { tailLift: 0.4 });
+        if ((a.flip -= dt) <= 0) {
+          a.flip = 0.22;
+          this.facing = this.facing === 1 ? -1 : 1;
+        }
+        if (a.t > 2.2) {
+          this.act = { k: 'dizzy', t: 1.2 };
+          this.emote('stars');
+        }
+        return;
+      case 'petted':
+        a.t += dt;
+        this.pose('happy', { tailWag: 0.45 });
+        if ((a.next -= dt) <= 0) {
+          a.next = 1.1;
+          this.emote('heart');
+          if (a.t > 0.5) this.sound('purr', true);
+        }
+        if (this.time - a.last > 1.4) this.act = this.idleAct(1.5);
+        return;
+      case 'dance':
+        a.t += dt;
+        this.pose('dance');
+        if ((a.next -= dt) <= 0) {
+          a.next = 1.1;
+          this.emote('note');
+          if (r() < 0.35) this.facing = this.facing === 1 ? -1 : 1;
+        }
+        if (a.t > a.dur) this.act = this.idleAct(1 + r());
+        return;
+      case 'shake':
+        if (a.t === 0) this.events.push({ type: 'dust', x: this.x, y: this.y, big: false });
+        a.t += dt;
+        this.pose(a.t < 1.1 ? 'shake' : 'stand');
+        if (a.t > 1.4) this.act = this.idleAct(1 + r());
+        return;
+      case 'paw':
+        a.t += dt;
+        this.pose('paw');
+        if ((a.next -= dt) <= 0) {
+          a.next = 0.45;
+          this.events.push({ type: 'dust', x: this.x - this.facing * this.margin * 0.6, y: this.y, big: false });
+        }
+        if (a.t > 1.7) {
+          if (a.charge) {
+            const p = this.platform;
+            const m = this.margin * 0.7;
+            const toX = clamp(this.x + this.facing * (180 + r() * 180) * Math.max(0.7, this.px), p.x1 + m, p.x2 - m);
+            if (Math.abs(toX - this.x) > 60) {
+              this.act = { k: 'walk', toX, run: true, dur: 6, t: 0, charge: true };
+              this.sound('growl', true);
+              return;
+            }
+          }
+          this.act = this.idleAct(1 + r() * 2);
+        }
+        return;
+      case 'sneeze':
+        a.t += dt;
+        this.pose(a.t < 0.7 ? 'sneeze_in' : a.t < 1.05 ? 'sneeze_out' : 'stand');
+        if (!a.done && a.t >= 0.7) {
+          a.done = true;
+          this.sound('sneeze');
+          const m = this.mouthAt();
+          this.events.push({ type: 'dust', x: m.x + this.facing * 6, y: Math.min(this.y, m.y + 4), big: false });
+        }
+        if (a.t > 1.5) this.act = this.idleAct(1 + r());
+        return;
+      case 'pounce': {
+        a.t += dt;
+        if (a.phase === 'ready') {
+          this.pose('pounce');
+          if (this.cursor) {
+            a.tx = this.cursor.x;
+            const dirn = a.tx > this.x ? 1 : -1;
+            if (dirn !== this.facing) this.facing = dirn;
+          }
+          if (a.t > a.wait) {
+            // Leap at where the cursor was.
+            const p = this.platform;
+            const m = this.margin * 0.5;
+            const reach = this.heightPx * 3.2;
+            const tx = clamp(a.tx, Math.max(p.x1 + m, this.x - reach), Math.min(p.x2 - m, this.x + reach));
+            const h = this.heightPx * (0.6 + 0.5 * this.species.personality.jump);
+            const t = 2 * Math.sqrt((2 * h) / G);
+            this.vy = -Math.sqrt(2 * G * h);
+            this.vx = (tx - this.x) / t;
+            this.grounded = false;
+            a.phase = 'air';
+            this.events.push({ type: 'dust', x: this.x, y: this.y, big: false }, { type: 'squash', amount: -0.16 });
+            this.sound('whoosh');
+          }
+        } else this.pose('jump', { jaw: 0.6, arms: 0.9 });
+        return;
+      }
+      case 'hop':
+        a.t += dt;
+        this.pose('happy', { tailLift: 0.35 });
+        if (this.grounded && (a.next -= dt) <= 0) {
+          if (a.n <= 0) {
+            this.act = this.idleAct(1 + r());
+            return;
+          }
+          a.n--;
+          a.next = 0.12;
+          this.vy = -(200 + 90 * r()) * Math.max(0.6, this.px) * (0.8 + 0.4 * this.species.personality.jump);
+          this.vx = this.facing * (r() < 0.5 ? 40 : 0) * Math.max(0.6, this.px);
+          this.grounded = false;
+          this.events.push({ type: 'squash', amount: -0.12 });
+          this.act = { k: 'fall', t: 0, resume: a, voluntary: true };
+        }
+        return;
+      case 'stretch':
+        a.t += dt;
+        this.pose(a.t < 1.4 ? 'stretch' : a.t < 2.2 ? 'yawn' : 'stand');
+        if (a.t > 2.5) this.act = this.idleAct(1 + r());
+        return;
+      case 'gaze':
+        a.t += dt;
+        this.pose('look_up');
+        if (a.t > a.dur) this.act = this.idleAct(1 + r());
+        return;
+      case 'follow': {
+        a.t += dt;
+        const c = this.cursor;
+        const pl = this.platform;
+        if (!c || a.t > 7 || c.y < pl.y - this.heightPx * 2.5 || c.y > pl.y + 60) {
+          this.act = this.idleAct(1 + r());
+          return;
+        }
+        const tx = clamp(c.x - this.facing * this.margin * 1.2, pl.x1 + this.margin, pl.x2 - this.margin);
+        const far = Math.abs(tx - this.x) > 220;
+        rig.run = far ? 1 : 0;
+        this.pose('alert', { tailWag: 0.15 });
+        if (this.walkTo(tx, far, dt)) {
+          this.facing = c.x >= this.x ? 1 : -1;
+          this.act = { k: 'watch', t: 0, dur: 2 + r() * 3 };
+        }
+        return;
+      }
+      case 'hunt': {
+        a.t += dt;
+        const b = this.butterfly;
+        if (!b || b.leaving || a.t > 16) {
+          if (b && b.leaving) this.emote(r() < 0.5 ? 'note' : 'question');
+          this.act = this.idleAct(1 + r() * 2);
+          return;
+        }
+        const dx = b.x - this.x;
+        const high = this.y - b.y;
+        const reach = this.heightPx * (1.2 + 1.6 * this.species.personality.jump);
+        if (a.snap > 0) {
+          // Snapping at it: jaws wide, then a miss.
+          a.snap -= dt;
+          this.pose('look_up', { jaw: a.snap > 0.2 ? 0.9 : 0.1 });
+          if (a.snap <= 0) {
+            b.leaving = true;
+            b.vy = -260;
+            b.vx = (dx >= 0 ? 1 : -1) * 150;
+          }
+          return;
+        }
+        this.pose(high > this.heightPx * 1.4 ? 'look_up' : 'alert', { tailWag: 0.2 });
+        rig.run = Math.abs(dx) > 160 ? 1 : 0;
+        if (Math.abs(dx) > this.margin * 0.6) this.walkTo(clamp(b.x, this.platform.x1 + this.margin, this.platform.x2 - this.margin), rig.run > 0, dt);
+        else this.vx *= 0.8;
+        if (Math.abs(dx) < this.margin * 1.4 && high < reach && a.t > 2) {
+          if (this.species.personality.jump > 0.3) {
+            this.vy = -Math.sqrt(2 * G * Math.max(20, high - this.heightPx * 0.6));
+            this.grounded = false;
+            this.act = { k: 'fall', t: 0, resume: null, voluntary: true };
+            b.leaving = true;
+            b.vy = -300;
+            this.sound('whoosh', true);
+          } else {
+            a.snap = 0.45;
+            this.sound('chirp', true);
+          }
+        }
+        return;
+      }
+      // ---- 1.2 ----
+      case 'special':
+        return Moves.thinkSpecial(this, a, dt);
+      case 'leap':
+        return Moves.thinkLeap(this, a, dt);
+      case 'bow':
+        return Moves.thinkBow(this, a, dt);
+      case 'playdead':
+        return Moves.thinkPlayDead(this, a, dt);
+      case 'fly':
+        return Flight.thinkFly(this, a, dt);
+      case 'perch':
+        return Flight.thinkPerch(this, a, dt);
+      case 'toy':
+        return Toys.thinkToy(this, a, dt);
+      case 'climbfun':
+        return Walls.thinkClimbFun(this, a, dt);
+      case 'cling':
+        return Walls.thinkCling(this, a, dt);
+      case 'greet':
+        return Social.thinkGreet(this, a, dt);
+      case 'tag':
+        return Social.thinkTag(this, a, dt);
+      case 'roaroff':
+        return Social.thinkRoarOff(this, a, dt);
+      case 'watchVideo':
+        return Social.thinkWatchVideo(this, a, dt);
+      case 'fidget':
+        return Fidgets.thinkFidget(this, a, dt);
+      case 'forage':
+        return Fidgets.thinkForage(this, a, dt);
+    }
+  }
+
+  /** Get onto a window side: jump to it from below, or swing over the edge from the top. */
+  startClimb(wall: Wall, dir: 'up' | 'down', to: Platform, resume: Act) {
+    const left = wall.side === 'left';
+    const r1 = left ? -Math.PI / 2 : Math.PI / 2;
+    this.facing = (left ? 1 : -1) * (dir === 'up' ? 1 : -1) as 1 | -1;
+    this.grounded = false;
+    const plats = this.platforms;
+    if (dir === 'up') {
+      const startY = Math.min(this.y, wall.y2) - this.heightPx * 0.15;
+      const top = plats.find((p) => p.id === to.id) ?? null;
+      const climb: Act = { k: 'climb', wall, dir, t: 0, top, land: null, resume };
+      const dy = Math.abs(this.y - startY);
+      this.act = { k: 'move', t: 0, dur: 0.28 + Math.sqrt(dy) * 0.02, from: { x: this.x, y: this.y }, to: { x: wall.x, y: startY }, r0: 0, r1, arc: dy > 20 ? 0 : this.heightPx * 0.2, next: climb, platform: null, wall };
+      if (dy > 20) this.sound('boing', true);
+    } else {
+      const land = plats.find((p) => p.id === to.id) ?? null;
+      const climb: Act = { k: 'climb', wall, dir, t: 0, top: null, land, resume };
+      this.act = { k: 'move', t: 0, dur: 0.4, from: { x: this.x, y: this.y }, to: { x: wall.x, y: wall.y1 + this.margin * 0.4 }, r0: 0, r1, arc: this.heightPx * 0.15, next: climb, platform: null, wall };
+    }
+  }
+
+  private arrive(p: Purpose) {
+    if (p === 'food') {
+      const f = this.foods.filter((q) => q.landed).sort((a, b) => Math.abs(a.x - this.x) - Math.abs(b.x - this.x))[0];
+      if (f && Math.abs(f.x - this.x) < this.margin * 2 + 30 && Math.abs(f.y - this.y) < 4) {
+        this.facing = f.x >= this.x ? 1 : -1;
+        this.act = { k: 'eat', food: f.id, t: 0, next: 0.2 };
+        return;
+      }
+      if (f) {
+        this.goTo(f.x, f.y, 'food', true);
+        return;
+      }
+    }
+    if (p === 'cursor') {
+      this.act = { k: 'watch', t: 0, dur: 3 + this.env.rand() * 3 };
+      this.emote('heart');
+      return;
+    }
+    if (p === 'ball') {
+      this.act = { k: 'chase', t: 0 };
+      return;
+    }
+    if (p === 'toy') {
+      Toys.resumeToy(this);
+      return;
+    }
+    if (p === 'nap') {
+      Social.afterNap(this);
+      return;
+    }
+    this.act = this.idleAct(1 + this.env.rand() * 3);
+  }
+
+  // ---------------- moving to another monitor ----------------
+  // The overlay hands a dino over to the monitor next to it: it walks off an 'exit' edge here
+  // (leave), and walks in from the matching edge there (enter), or is dropped in (dropIn).
+
+  /** Walking out through an 'exit' edge, or in from one (physics lets it past the screen edge). */
+  crossing: { side: 'left' | 'right'; dir: 'out' | 'in' } | null = null;
+
+  /** How far the drawing reaches behind the feet, px (tail and hips). */
+  private get behind() {
+    const p = this.rig.p;
+    return (p.tailLen + p.bodyLen * 0.5 + p.hipR) * this.px;
+  }
+
+  /** Walks off the screen through its `side` edge (an 'exit' edge) to the monitor there, and emits
+   * 'exit' once it's out of sight. False when it can't go now (an egg, asleep, carried, up high). */
+  leave(side: 'left' | 'right'): boolean {
+    if (!this.hatched || this.held || !this.grounded || this.anchored || this.asleep || this.platform.id !== GROUND || this.edges[side] !== 'exit') return false;
+    const toX = side === 'right' ? this.world.width + this.behind + 60 : -this.behind - 60;
+    const run = Math.abs(toX - this.x) > 700;
+    this.crossing = { side, dir: 'out' };
+    this.facing = side === 'right' ? 1 : -1;
+    this.act = { k: 'walk', toX, run, dur: 10 + (Math.abs(toX - this.x) / (run ? this.runSpeed : this.walkSpeed)) * 2, t: 0 };
+    return true;
+  }
+
+  /** Arrives from the monitor on `side`: walks in along the ground from just off that edge, or,
+   * when it didn't leave from the ground, drops in at height `y`. */
+  enter(side: 'left' | 'right', y: number, onGround: boolean) {
+    const w = this.world;
+    this.held = false;
+    this.vx = 0;
+    this.facing = side === 'left' ? 1 : -1;
+    if (!this.hatched || !onGround) {
+      this.dropIn(side === 'left' ? 0 : w.width, y);
+      return;
+    }
+    this.rot = 0;
+    this.vy = 0;
+    this.grounded = true;
+    this.platform = w.platforms.find((p) => p.id === GROUND) ?? ground(w.width, w.height);
+    this.y = this.platform.y;
+    const inX = Math.min(w.width / 2, this.margin * 2 + 120 + this.env.rand() * 240);
+    this.x = side === 'left' ? -this.reach : w.width + this.reach;
+    this.crossing = { side, dir: 'in' };
+    this.act = { k: 'walk', toX: side === 'left' ? inX : w.width - inX, run: false, dur: 30, t: 0 };
+  }
+
+  /** Dropped in from another monitor at (x, y): it falls from there. */
+  dropIn(x: number, y: number) {
+    const w = this.world;
+    this.held = false;
+    this.crossing = null;
+    this.x = clamp(x, this.margin * 0.5, w.width - this.margin * 0.5);
+    this.y = clamp(y, this.heightPx * 0.9, w.height);
+    this.vx = 0;
+    this.startFall(0);
+  }
+
+  /** Moves a crossing dino along the ground past the screen edge, where physics() would stop it.
+   * False once the crossing is over or called off (picked up, food, a nap): physics takes over. */
+  private cross(dt: number): boolean {
+    const c = this.crossing!;
+    if (!this.grounded || this.platform.id !== GROUND || this.act.k !== 'walk') {
+      this.crossing = null;
+      return false;
+    }
+    const w = this.world;
+    this.x += this.vx * dt;
+    this.y = this.platform.y;
+    if (c.dir === 'in') {
+      if (this.x > this.margin && this.x < w.width - this.margin) this.crossing = null;
+    } else if (c.side === 'right' ? this.x - this.behind > w.width : this.x + this.behind < 0) {
+      this.crossing = null;
+      this.vx = 0;
+      this.act = this.idleAct(1);
+      this.events.push({ type: 'exit', side: c.side, y: this.y, ground: true });
+    }
+    return true;
+  }
+
+  /** A growth treat: 30 minutes of growing in one bite, sparkles, and it's full for a while. */
+  private ateTreat() {
+    const d = this.data;
+    d.activeSeconds += 1800;
+    d.happiness = clamp(d.happiness + 0.1, 0, 1);
+    d.hunger = Math.max(0, d.hunger - 0.15);
+    this.treatReady = this.time + 90;
+    // Grow right away (and announce a new stage if it reached one).
+    this.growthTimer = 2;
+    const c = this.toWorld({ x: this.rig.p.bodyLen * 0.4, y: this.rig.height * 0.55 });
+    this.events.push({ type: 'burst' }, { type: 'fx', kind: 'sparkles', x: c.x, y: c.y, scale: Math.max(0.8, this.px) }, { type: 'save' });
+    this.sound('magic');
+    this.emote('sparkle');
+    this.say('treat', true);
+    this.act = { k: 'react', kind: 'happy', t: 0, dur: 2 };
+  }
+
+  // ---------------- output ----------------
+
+  emote(kind: EmoteKind) {
+    if (this.settings.speech === 'off') return;
+    if (kind !== 'zzz' && this.time - this.lastEmote < 0.25) return;
+    this.lastEmote = this.time;
+    this.events.push({ type: 'emote', kind });
+  }
+
+  sound(name: SoundName, soft = false) {
+    // While you play or watch something, it keeps its idle noises to itself.
+    if (soft && this.quiet && IDLE_NOISES.has(name)) return;
+    this.events.push({ type: 'sound', name, soft });
+  }
+
+  /** Says a line for `ev` (chatty speech only); `vars` fill in names like {game} and {site}. */
+  say(ev: LineEvent, important = false, vars?: Record<string, string>) {
+    if (this.settings.speech !== 'chatty') return;
+    if (!important && this.time - this.lastWords < 40) return;
+    const text = pickLine(this.species, ev, this.env.rand, vars);
+    if (!text) return;
+    this.lastWords = this.time;
+    this.events.push({ type: 'say', text });
+  }
+
+  /** A small effect at a point (overlay coordinates). */
+  fx(kind: FxKind, x: number, y: number, dir?: number, scale = Math.max(0.6, this.px)) {
+    this.events.push({ type: 'fx', kind, x, y, dir, scale });
+  }
+
+  drain(): SimEvent[] {
+    const e = this.events;
+    this.events = [];
+    return e;
+  }
+
+  snapshot(): PetData {
+    this.data.lastSeen = this.env.now();
+    this.data.x = this.world.width ? clamp(this.x / this.world.width, 0, 1) : null;
+    return { ...this.data, stats: { ...this.data.stats } };
+  }
+}
+
+export const _test = { G, TAU };

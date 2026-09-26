@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<title>Fixture Game</title>
+<style>:root { --bg: #123456; } body { background: var(--bg); margin: 0; }</style>
+</head>
+<body>
+<canvas id="c" width="200" height="100"></canvas>
+<script>
+const SPEED = 2;
+const CONFIG = { size: 10, color: '#ff0000' };
+let frames = 0;
+const state = { x: 0 };
+function boom() {
+  return null.x;
+}
+function loop() {
+  frames++;
+  state.x += SPEED;
+  window.probe = { speed: SPEED, size: CONFIG.size, color: CONFIG.color, frames, bg: getComputedStyle(document.body).backgroundColor };
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+console.log('fixture ready');
+</script>
+</body>
+</html>

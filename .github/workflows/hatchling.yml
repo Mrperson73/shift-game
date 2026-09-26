@@ -1,0 +1,172 @@
+name: Hatchling
+
+on:
+  push:
+    paths: ['hatchling/**', '.github/workflows/hatchling.yml']
+    tags: ['hatchling-v*']
+  pull_request:
+    paths: ['hatchling/**', '.github/workflows/hatchling.yml']
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Publish a GitHub release (hatchling-v<package.json version>) once the builds pass
+        type: boolean
+        default: false
+
+# A newer push to the same PR cancels the older run. Release runs are never cancelled.
+concurrency:
+  group: hatchling-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: hatchling
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hatchling/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: End-to-end tests (real Electron app under Xvfb)
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb xdotool
+          npx playwright install-deps chromium >/dev/null 2>&1 || true
+          xvfb-run -a -s "-screen 0 1600x1000x24" npm run test:e2e
+
+  package:
+    needs: test
+    # Windows only: Linux builds are no longer published.
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write # build provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hatchling/package-lock.json
+      - run: npm ci
+
+      # Code signing turns on automatically once the WIN_CSC_LINK (base64 .pfx) and
+      # WIN_CSC_KEY_PASSWORD repository secrets exist. Without them the build is unsigned.
+      - name: Build Windows installer + portable zip
+        shell: pwsh
+        env:
+          SIGN_CERT: ${{ secrets.WIN_CSC_LINK }}
+          SIGN_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if ($env:SIGN_CERT) { $env:CSC_LINK = $env:SIGN_CERT; $env:CSC_KEY_PASSWORD = $env:SIGN_PASSWORD }
+          else { $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false' }
+          npm run dist:win
+
+      - name: Install, launch and uninstall on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Get-ChildItem release/Hatchling-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exited with $($p.ExitCode)" }
+          $dir = "$env:LOCALAPPDATA\Programs\hatchling"
+          $exe = "$dir\Hatchling.exe"
+          if (-not (Test-Path $exe)) { throw "Hatchling.exe not found in $dir" }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Hatchling.lnk")) { throw 'Start menu shortcut missing' }
+
+          # The smoke test runs the real overlay and checks the Win32 integration (window list,
+          # full-screen detection, process list) through the packaged native module.
+          $env:HATCHLING_SMOKE_OUT = "$env:RUNNER_TEMP\hatchling-smoke.txt"
+          $p = Start-Process $exe -ArgumentList '--smoke-test' -Wait -PassThru
+          if (Test-Path $env:HATCHLING_SMOKE_OUT) { Get-Content $env:HATCHLING_SMOKE_OUT }
+          if ($p.ExitCode -ne 0) { throw "installed app failed its smoke test (exit $($p.ExitCode))" }
+
+          # A start-with-Windows entry (as the app writes it) must be gone after uninstalling.
+          # (Fresh runner images may not have the Run key yet.)
+          $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
+          New-ItemProperty -Path $runKey -Name 'Hatchling' -Value "`"$exe`" --autostart" -Force | Out-Null
+          Start-Process "$dir\Uninstall Hatchling.exe" -ArgumentList '/S' -Wait
+          # The NSIS uninstaller re-launches itself from %TEMP%, so wait for the files to go.
+          for ($i = 0; $i -lt 60 -and (Test-Path $exe); $i++) { Start-Sleep -Milliseconds 500 }
+          if (Test-Path $exe) { throw 'uninstaller left Hatchling.exe behind' }
+          $run = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Hatchling' -ErrorAction SilentlyContinue
+          if ($run) { throw 'uninstaller left the start-with-Windows entry behind' }
+          'install -> launch -> uninstall OK'
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd release
+          sha256sum *.exe *.zip > SHA256SUMS-Windows.txt
+          cat SHA256SUMS-Windows.txt
+
+      # Signed record that these files were built by this workflow from this commit.
+      # Verify with: gh attestation verify <file> -R Mrperson73/shift-game
+      - uses: actions/attest-build-provenance@v2
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        with:
+          subject-path: |
+            hatchling/release/Hatchling-Setup-*.exe
+            hatchling/release/Hatchling-Portable-*.zip
+
+      # One artifact per download so nothing ends up zipped inside another zip.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hatchling-Setup-Windows
+          path: |
+            hatchling/release/Hatchling-Setup-*.exe
+            hatchling/release/SHA256SUMS-*.txt
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hatchling-Portable-Windows
+          path: hatchling/release/Hatchling-Portable-*.zip
+          compression-level: 0
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/hatchling-v') || (github.event_name == 'workflow_dispatch' && inputs.release)
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish GitHub release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then tag="$GITHUB_REF_NAME"
+          else tag="hatchling-v$(node -p "require('./hatchling/package.json').version")"; fi
+          cat > notes.md <<'EOF'
+          **Windows:** download `Hatchling-Setup-*.exe` and double-click it. It installs for your user only (no admin prompt) and opens Hatchling, where you choose your egg.
+
+          Hatchling isn't code-signed, so SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
+
+          **Portable:** extract `Hatchling-Portable-*.zip` to a folder and run `Hatchling.exe` from there.
+
+          Before this release was published, CI installed the Windows build on a clean machine, launched it with `--smoke-test` and uninstalled it. SHA-256 checksums are in `SHA256SUMS-*.txt`. Build provenance: `gh attestation verify <file> -R Mrperson73/shift-game`.
+          EOF
+          gh release create "$tag" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Hatchling ${tag#hatchling-v}" \
+            --notes-file notes.md
