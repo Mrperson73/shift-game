@@ -120,17 +120,21 @@ export function SettingsView() {
         <SettingRow label="Size" hint="On your desktop">
           <Segmented label="Size" value={s.size} options={[['S', 'Small'], ['M', 'Medium'], ['L', 'Large']]} onChange={(size) => set({ size })} />
         </SettingRow>
-        <SettingRow label="Energy" hint="How busy it is">
-          <Segmented label="Energy" value={s.activity} options={[['calm', 'Calm'], ['normal', 'Normal'], ['lively', 'Lively']]} onChange={(activity) => set({ activity })} />
+        <SettingRow label="Activity" hint="How much it runs around on its own">
+          <Segmented label="Activity" value={s.activity} options={[['calm', 'Calm'], ['normal', 'Normal'], ['lively', 'Lively']]} onChange={(activity) => set({ activity })} />
         </SettingRow>
         <SettingRow label="Speech" hint="Bubbles and emotes">
           <Segmented label="Speech" value={s.speech} options={[['off', 'Off'], ['emotes', 'Emotes'], ['chatty', 'Chatty']]} onChange={(speech) => set({ speech })} />
         </SettingRow>
-        <SettingRow label="Growth" hint={s.growthSpeed === 1 ? 'Grown up in about 60 hours together' : `Grown up in about ${Math.round(60 / s.growthSpeed)} hours together`}>
+        <SettingRow
+          label="Growth"
+          hint={s.growthSpeed === 0 ? 'Paused: only growth treats or picking a stage change their size' : `Adult after about ${Math.round(60 / s.growthSpeed)} hours of you using your PC`}
+        >
           <Segmented
             label="Growth speed"
             value={String(s.growthSpeed) as `${GrowthSpeed}`}
             options={[
+              ['0', 'Pause'],
               ['1', '1×'],
               ['2', '2×'],
               ['5', '5×'],

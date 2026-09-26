@@ -52,7 +52,7 @@ interface Def {
 const stageFrom = (id: string) => STAGES.find((s) => s.id === id)!.from;
 /** Whole percent grown, so stage badges read like "12 / 15". */
 const percentGrown = (p: PetData) => Math.floor(growthOf(p.activeSeconds) * 100 + 1e-9);
-const hoursTogether = (p: PetData) => p.activeSeconds / 3600;
+const hoursTogether = (p: PetData) => p.togetherSeconds / 3600;
 
 const DEFS: Def[] = [
   { id: 'hatched', name: 'Hello, world', description: 'Hatch your egg', icon: 'egg', kind: 'special', target: 1, value: (p) => (p.hatchedAt !== null ? 1 : 0) },

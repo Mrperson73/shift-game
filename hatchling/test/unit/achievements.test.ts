@@ -37,17 +37,23 @@ describe('achievements', () => {
   });
 
   it('follows growth stages and time together', () => {
-    const young = byId(pet({ activeSeconds: 8 * HOUR }));
+    const young = byId(pet({ activeSeconds: 8 * HOUR, togetherSeconds: 8 * HOUR }));
     expect(young['juvenile'].done).toBe(false);
     expect(young['hours-1'].done).toBe(true);
     expect(young['hours-10'].progress).toBeCloseTo(0.8);
     const juvenile = byId(pet({ activeSeconds: 9 * HOUR }));
     expect(juvenile['juvenile'].done).toBe(true);
     expect(juvenile['subadult'].done).toBe(false);
-    const adult = byId(pet({ activeSeconds: 60 * HOUR }));
+    const adult = byId(pet({ activeSeconds: 60 * HOUR, togetherSeconds: 60 * HOUR }));
     expect(adult['subadult'].done).toBe(true);
     expect(adult['adult'].done).toBe(true);
     expect(adult['hours-50'].done).toBe(true);
+  });
+
+  it('time badges count real time, not growth (fast growth, treats, a picked stage)', () => {
+    const a = byId(pet({ activeSeconds: 60 * HOUR, togetherSeconds: 2 * HOUR }));
+    expect(a['adult'].done).toBe(true);
+    expect(a['hours-10'].done).toBe(false);
   });
 
   it('knows a shiny', () => {
@@ -56,7 +62,7 @@ describe('achievements', () => {
   });
 
   it('tolerates odd numbers', () => {
-    const a = byId(pet({ activeSeconds: Number.NaN }, { meals: -3 }));
+    const a = byId(pet({ activeSeconds: Number.NaN, togetherSeconds: Number.NaN }, { meals: -3 }));
     expect(a['meal-1'].progress).toBe(0);
     expect(a['hours-1'].progress).toBe(0);
   });

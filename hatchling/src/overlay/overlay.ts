@@ -809,6 +809,8 @@ function command(h: Host, c: PetCommand) {
       return pet.trick(c.name);
     case 'treat':
       return pet.treat();
+    case 'set-stage':
+      return pet.setStage(c.stage);
     case 'toy':
       return pet.toy(c.toy);
     case 'special':

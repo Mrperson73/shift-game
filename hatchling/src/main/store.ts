@@ -65,6 +65,8 @@ export function sanitizePet(raw: unknown): PetData | null {
     bornAt: num(p.bornAt, 0, 8.64e15, now),
     hatchedAt: p.hatchedAt === null ? null : num(p.hatchedAt, 0, 8.64e15, now),
     activeSeconds: num(p.activeSeconds, 0, 1e9, 0),
+    // Saves from before 1.2.2 only had growth time: the best guess for time together.
+    togetherSeconds: num(p.togetherSeconds, 0, 1e9, num(p.activeSeconds, 0, 1e9, 0)),
     energy: num(p.energy, 0, 1, 1),
     happiness: num(p.happiness, 0, 1, 0.7),
     hunger: num(p.hunger, 0, 1, 0.2),
@@ -102,6 +104,7 @@ function sanitizePast(raw: unknown): PastPet | null {
     variant: Math.floor(num(h.variant, -1, 99, 0)),
     hatchedAt: typeof h.hatchedAt === 'number' ? num(h.hatchedAt, 0, 8.64e15, 0) : null,
     activeSeconds: num(h.activeSeconds, 0, 1e9, 0),
+    togetherSeconds: num(h.togetherSeconds, 0, 1e9, num(h.activeSeconds, 0, 1e9, 0)),
     retiredAt: num(h.retiredAt, 0, 8.64e15, 0),
     shiny: h.shiny === true,
     colors: sanitizeColors(h.colors),
@@ -110,7 +113,7 @@ function sanitizePast(raw: unknown): PastPet | null {
 
 /** What's kept of a dino when you release it. */
 export function pastOf(p: PetData, now: number): PastPet {
-  return { name: p.name, species: p.species, variant: p.variant, hatchedAt: p.hatchedAt, activeSeconds: p.activeSeconds, retiredAt: now, shiny: p.shiny, colors: p.colors };
+  return { name: p.name, species: p.species, variant: p.variant, hatchedAt: p.hatchedAt, activeSeconds: p.activeSeconds, togetherSeconds: p.togetherSeconds, retiredAt: now, shiny: p.shiny, colors: p.colors };
 }
 
 export function sanitizeSettings(raw: unknown, base: Settings = DEFAULT_SETTINGS): Settings {
@@ -200,6 +203,13 @@ export class Store {
         if (f === this.file && fs.existsSync(f)) this.recovered = `Could not read ${path.basename(f)}: ${(e as Error).message}`;
       }
     }
+    // Neither file could be read: keep a copy of the main one, or the next saves overwrite both
+    // and every dino in it is lost for good.
+    try {
+      if (fs.existsSync(this.file)) fs.copyFileSync(this.file, `${this.file}.unreadable-${Date.now()}`);
+    } catch {
+      /* best effort */
+    }
     return { v: 1, rev: REV, roster: [], out: [], selected: null, settings: { ...DEFAULT_SETTINGS }, history: [] };
   }
 
@@ -215,7 +225,14 @@ export class Store {
     if (text === this.lastText) return;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, text);
+    // On disk before the rename, so a power cut can't leave a torn file behind.
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeFileSync(fd, text);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
     try {
       if (fs.existsSync(this.file)) fs.copyFileSync(this.file, this.file + '.bak');
     } catch {

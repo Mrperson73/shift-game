@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, Notification, powerMonitor, protocol, screen, session, shell, Tray } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isStage, stageSeconds } from '../pet/growth';
 import { BUILT_IN, movesOf, type SpeciesDef } from '../pet/species';
 import type { Area, DinoAction, Leave, PanelUpdate, WorldUpdate } from '../shared/api';
 import { moveName, toyName, trickName } from '../shared/labels';
@@ -58,7 +59,8 @@ const errors: string[] = [];
 const settings = () => store.data.settings;
 
 function log(msg: string) {
-  errors.push(msg);
+  // Only the smoke test reads these; a failing poll would otherwise grow this forever.
+  if (errors.length < 200) errors.push(msg);
   try {
     const f = path.join(USER, 'errors.log');
     if (fs.existsSync(f) && fs.statSync(f).size > 256 * 1024) fs.renameSync(f, f + '.old');
@@ -835,6 +837,12 @@ function watchMods() {
       if (modsTimer) clearTimeout(modsTimer);
       modsTimer = setTimeout(reloadSpecies, 400);
     });
+    // The folder deleted or renamed while watched (EPERM on Windows): stop, and pollActivity
+    // watches it again once it's back. Unhandled, this is a main-process crash dialog.
+    modsWatcher.on('error', () => {
+      modsWatcher?.close();
+      modsWatcher = null;
+    });
   } catch (e) {
     log(`mods watch: ${(e as Error).message}`);
   }
@@ -984,6 +992,14 @@ function registerIpc() {
       case 'toy':
         if (TOYS.includes(c.toy)) command({ type: 'toy', toy: c.toy, pet });
         return;
+      case 'set-stage': {
+        if (!d || d.pet.hatchedAt === null || !isStage(c.stage)) return;
+        d.pet.activeSeconds = stageSeconds(c.stage);
+        save();
+        command({ type: 'set-stage', stage: c.stage, pet });
+        pushPanel();
+        return;
+      }
       case 'feed':
       case 'play':
       case 'call':
@@ -1155,7 +1171,8 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
     save();
   });
   powerMonitor.on('resume', () => {
-    locked = false;
+    // It can wake up to the lock screen: unlock-screen clears this then.
+    locked = powerMonitor.getSystemIdleState(1) === 'locked';
     pollActivity();
     resetWorld();
   });

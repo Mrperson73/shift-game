@@ -291,10 +291,12 @@ export function openDesktop(): Desktop {
         const ex = Number(GetWindowLongPtrW(h, GWL_EXSTYLE));
         // Click-through overlays (game bars, FPS counters) are never "the full-screen app".
         const shell = SKIP_CLASSES.has(cls) || exclude.has(id) || (ex & WS_EX_TRANSPARENT) !== 0 || (ex & WS_EX_LAYERED && invisible(h));
+        const style = Number(GetWindowLongPtrW(h, GWL_STYLE));
         const r: Partial<Rect> = {};
         const mon = monitorOf(h);
         if (!mon || !GetWindowRect(h, r)) return { hwnd: id, fullscreen: false, monitor: mon ?? { left: 0, top: 0, right: 0, bottom: 0 } };
-        const full = !shell && r.left! <= mon.left && r.top! <= mon.top && r.right! >= mon.right && r.bottom! >= mon.bottom;
+        // A maximized window fills its monitor too when the taskbar auto-hides (see front()).
+        const full = !shell && !(style & WS_MAXIMIZE) && r.left! <= mon.left && r.top! <= mon.top && r.right! >= mon.right && r.bottom! >= mon.bottom;
         return { hwnd: id, fullscreen: full, monitor: mon };
       },
       coveredAbove(hwnd) {

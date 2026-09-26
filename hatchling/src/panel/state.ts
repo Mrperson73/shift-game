@@ -45,6 +45,9 @@ export function speciesOf(id: string): SpeciesDef {
   return species.value.find((s) => s.id === id) ?? species.value[0];
 }
 
+/** No "Badge unlocked!" party before this time (ms): a stage picked by hand isn't an achievement. */
+export const quietBadges = { until: 0 };
+
 /** Colours being tried on in the Colours view (shown in the habitat before they're applied). */
 export const colourPreview = signal<{ variant: number; colors: CustomColors | null } | null>(null);
 

@@ -115,7 +115,7 @@ export function ColoursView() {
     sfx.play('coin');
     reactions.emit('sparkle');
     const name = sel.colors ? 'Custom colours' : variantOf(sp, sel.variant).name;
-    toast(`${p.name} has a new look`, { icon: 'palette', sub: `${name} is on your desktop now` });
+    toast(`${p.name} has a new look`, { icon: 'palette', sub: `${name} applied` });
     setApplied(true);
     clearTimeout(timer.current);
     timer.current = window.setTimeout(() => setApplied(false), 1800);
@@ -224,7 +224,7 @@ export function ColoursView() {
       </section>
       {(dirty || applied) && (
         <div class="apply-bar">
-          <span class="apply-text">{applied ? 'Saved on your desktop.' : `Trying on: ${selectedName}`}</span>
+          <span class="apply-text">{applied ? 'Saved.' : `Trying on: ${selectedName}`}</span>
           {!applied && (
             <button type="button" class="btn ghost" onClick={reset}>
               Reset

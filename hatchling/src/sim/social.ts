@@ -15,7 +15,7 @@ import type { Platform } from '../shared/types';
 import { between, G, type Option, sgn } from './common';
 import * as Moves from './moves';
 import type { Act, Friend, Pet } from './pet';
-import { landingOn } from './world';
+import { landingOn, route } from './world';
 
 type Cat = 'rest' | 'move' | 'play' | 'express' | 'social' | 'explore';
 
@@ -332,6 +332,8 @@ export function napNearFriend(p: Pet): boolean {
     x = f.x + side * gap;
   }
   if (x < plat.x1 + m || x > plat.x2 - m) return false;
+  // No way there: it would try again every couple of seconds and never get to sleep.
+  if (plat.id !== p.platform.id && !route(p.platforms, p.world.walls, p.platform, p.x, plat, x, p.abilities)) return false;
   p.act = { k: 'travel', to: plat, toX: x, purpose: 'nap', run: false, t: 0, drop: false };
   return true;
 }

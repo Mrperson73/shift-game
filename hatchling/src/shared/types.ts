@@ -1,5 +1,6 @@
 // Data shared by the main process, the overlay (the pet) and the panel window.
 
+import type { Stage } from '../pet/growth';
 import type { ThemeId } from './themes';
 
 export type PatternKind = 'stripes' | 'spots' | 'bands' | 'rosettes' | 'speckles' | 'saddle' | 'none';
@@ -34,8 +35,10 @@ export interface PetData {
   bornAt: number;
   /** Hatched (ms since epoch), or null while still an egg. */
   hatchedAt: number | null;
-  /** Seconds spent together while you were active at the PC. Drives growth. */
+  /** Growth progress in seconds (active time × growth speed, plus treats or a picked stage). Drives growth. */
   activeSeconds: number;
+  /** Real seconds spent together while you were active at the PC (what "together" and time badges show). */
+  togetherSeconds: number;
   energy: number;
   happiness: number;
   hunger: number;
@@ -67,9 +70,10 @@ export type SpeechSetting = 'off' | 'emotes' | 'chatty';
 export type ActivitySetting = 'calm' | 'normal' | 'lively';
 /** Where dinos live: on every monitor (they walk from one to the next), or only on the main one. */
 export type MonitorSetting = 'all' | 'primary';
-/** How many times faster than normal a pet grows (normal: about 60 active hours to adult). */
-export type GrowthSpeed = 1 | 2 | 5 | 10;
-export const GROWTH_SPEEDS: GrowthSpeed[] = [1, 2, 5, 10];
+/** How many times faster than normal a pet grows (normal: about 60 active hours to adult).
+ * 0 = paused: it stays at the stage it's at. */
+export type GrowthSpeed = 0 | 1 | 2 | 5 | 10;
+export const GROWTH_SPEEDS: GrowthSpeed[] = [0, 1, 2, 5, 10];
 /** Frame rate budget: 'saver' halves most frame rates, 'smooth' keeps everything at 60 fps. */
 export type PowerSetting = 'saver' | 'balanced' | 'smooth';
 
@@ -128,6 +132,7 @@ export function newPet(species: string, variant: number, name: string, now: numb
     bornAt: now,
     hatchedAt: null,
     activeSeconds: 0,
+    togetherSeconds: 0,
     energy: 1,
     happiness: 0.7,
     hunger: 0.2,
@@ -146,6 +151,8 @@ export interface PastPet {
   variant: number;
   hatchedAt: number | null;
   activeSeconds: number;
+  /** Missing in saves from before 1.2.2. */
+  togetherSeconds?: number;
   retiredAt: number;
   shiny?: boolean;
   colors?: CustomColors | null;
@@ -214,6 +221,8 @@ export type Command =
   | { type: 'trick'; name: TrickName }
   /** A growth treat: a golden snack that makes it grow a bit right away. */
   | { type: 'treat' }
+  /** Jump to the start of a growth stage (bigger or smaller). */
+  | { type: 'set-stage'; stage: Stage }
   /** Put a toy out to play with. */
   | { type: 'toy'; toy: ToyKind }
   /** Its species' signature move (stomp, head-butt, tail swipe, fly...). */

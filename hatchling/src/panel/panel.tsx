@@ -24,6 +24,7 @@ import {
   out,
   pet,
   problems,
+  quietBadges,
   roster,
   selected,
   settings,
@@ -182,7 +183,7 @@ function Main() {
       <PetHabitat />
       <main id="view" ref={scroller} class="content" role="tabpanel" aria-labelledby={`tab-${t}`}>
         <div key={t} class={`view view-${t} ${t === lastTab ? '' : dir}`}>
-          {t === 'pet' ? <PetView /> : t === 'colours' ? <ColoursView /> : t === 'dinos' ? <DinosView /> : <SettingsView />}
+          {t === 'pet' ? <PetView /> : t === 'colours' ? <ColoursView key={pet.value!.id} /> : t === 'dinos' ? <DinosView /> : <SettingsView />}
         </div>
       </main>
       <Toasts />
@@ -217,7 +218,7 @@ darkQuery.addEventListener('change', () => (systemDark.value = darkQuery.matches
 
 /** Celebrate badges unlocked while you're looking. */
 function celebrate(before: PetData | null, now: PetData | null) {
-  if (!before || !now || before.id !== now.id || document.hidden) return;
+  if (!before || !now || before.id !== now.id || document.hidden || Date.now() < quietBadges.until) return;
   const fresh = newlyUnlocked(before, now);
   if (!fresh.length) return;
   const party = () => {

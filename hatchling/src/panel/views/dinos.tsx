@@ -123,7 +123,17 @@ function DinoRow(props: { d: Dino }) {
         )}
       </div>
       {confirm && (
-        <div class="confirm dino-confirm" role="alertdialog" aria-label={`Release ${p.name}?`}>
+        <div
+          class="confirm dino-confirm"
+          role="alertdialog"
+          aria-label={`Release ${p.name}?`}
+          onKeyDown={(e) => {
+            // Escape cancels this, not the whole window.
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            setConfirm(false);
+          }}
+        >
           <p class="card-text">
             <b>Release {p.name}?</b> They'll be remembered in your past pets, but you can't bring them back.
           </p>
@@ -177,7 +187,7 @@ function PastPets() {
                     {h.shiny && <Icon name="sparkle" size={13} class="past-shiny" />}
                   </strong>
                   <span>
-                    {known ? sp.name : h.species} · {h.hatchedAt === null ? 'Egg' : stageName(stageOf(g))} · {duration(h.activeSeconds / 3600)} together
+                    {known ? sp.name : h.species} · {h.hatchedAt === null ? 'Egg' : stageName(stageOf(g))} · {duration((h.togetherSeconds ?? h.activeSeconds) / 3600)} together
                   </span>
                   <span class="past-dates">
                     {h.hatchedAt ? dateText(h.hatchedAt) : 'Never hatched'} – {dateText(h.retiredAt)}

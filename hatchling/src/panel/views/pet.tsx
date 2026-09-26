@@ -4,14 +4,14 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { paletteFor, variantOf } from '../../pet/draw';
-import { hoursToNextStage, STAGES, stageName, stageOf } from '../../pet/growth';
+import { hoursToNextStage, type Stage, STAGES, stageName, stageOf } from '../../pet/growth';
 import { movesOf, type SignatureMove } from '../../pet/species';
 import { type Achievement, type AchievementIcon, achievementsOf } from '../../shared/achievements';
 import { moveName, toyName, trickName } from '../../shared/labels';
 import { OUT_MAX, type ToyKind, TOYS, type TrickName } from '../../shared/types';
 import { Icon, type IconName } from '../icons';
 import { sfx } from '../sfx';
-import { command, dinoAction, growth, out, pet, petOut, reactions, type Reaction, roster, selected, settings, speciesOf } from '../state';
+import { command, dinoAction, growth, out, pet, petOut, quietBadges, reactions, type Reaction, roster, selected, settings, speciesOf } from '../state';
 import { eggThumb } from '../thumbs';
 import { CountUp, Meter, toast } from '../ui';
 import { ago, duration, type FoodKind, foodOf, shortDuration } from '../util';
@@ -164,8 +164,31 @@ function GrowthCard() {
   const pct = Math.floor(g * 100);
   const speed = settings.value?.growthSpeed ?? 1;
   const left = hoursToNextStage(p.activeSeconds);
-  const next = left === null ? null : left / speed;
-  const grows = !petOut.value ? 'It grows while it is out on your desktop.' : speed > 1 ? `It grows ${speed}× as fast while you're at your PC.` : "It grows while you're at your PC.";
+  const next = left === null ? null : left / Math.max(speed, 1e-9);
+  const grows =
+    speed === 0
+      ? 'Growing is paused (Settings → Growth).'
+      : !petOut.value
+        ? 'It grows while it is out on your desktop.'
+        : speed > 1
+          ? `It grows ${speed}× as fast while you're at your PC.`
+          : "It grows while you're at your PC.";
+  // Going back to a smaller stage loses progress, so it asks first.
+  const [asking, setAsking] = useState<Stage | null>(null);
+  const setStage = (id: Stage) => {
+    setAsking(null);
+    quietBadges.until = Date.now() + 3000;
+    command({ type: 'set-stage', stage: id });
+    reactions.emit('sparkle');
+    sfx.play('select');
+  };
+  const pick = (id: Stage) => {
+    if (egg || id === st) return;
+    if (STAGES.findIndex((s) => s.id === id) < si) {
+      sfx.play('open');
+      setAsking(id);
+    } else setStage(id);
+  };
   const nextStage = STAGES.find((s) => s.from > g);
   const stageLabel = egg ? 'Egg' : stageName(st);
   return (
@@ -182,31 +205,84 @@ function GrowthCard() {
           <b>{pct}%</b> grown
         </span>
       </div>
-      <div class="track" role="meter" aria-label="Growth" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-valuetext={`${stageLabel}, ${pct}% grown`}>
-        <div class="track-rail">
+      <div class="track">
+        <div class="track-rail" role="meter" aria-label="Growth" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-valuetext={`${stageLabel}, ${pct}% grown`}>
           <div class="track-fill" style={{ '--f': fill } as JSX.CSSProperties} />
         </div>
         <ol class="track-nodes">
-          {TRACK.map((t, i) => (
-            <li key={t.id} class={i < node ? 'past' : i === node ? 'now' : 'next'} style={{ '--i': i } as JSX.CSSProperties}>
-              <span class="track-dot">
-                <Icon name={i < node ? 'check' : t.icon} size={i === node ? 18 : 15} />
-              </span>
-              <span class="track-name">{t.name}</span>
-            </li>
-          ))}
+          {TRACK.map((t, i) => {
+            const cls = i < node ? 'past' : i === node ? 'now' : 'next';
+            const body = (
+              <>
+                <span class="track-dot">
+                  <Icon name={i < node ? 'check' : t.icon} size={i === node ? 18 : 15} />
+                </span>
+                <span class="track-name">{t.name}</span>
+              </>
+            );
+            const pickable = !egg && i > 0 && i !== node;
+            return (
+              <li key={t.id} class={cls} style={{ '--i': i } as JSX.CSSProperties}>
+                {pickable ? (
+                  <button type="button" class="track-pick" title={`Make it a ${t.name}`} onClick={() => pick(t.id as Stage)}>
+                    {body}
+                  </button>
+                ) : (
+                  body
+                )}
+              </li>
+            );
+          })}
         </ol>
       </div>
+      {asking && (
+        <div
+          class="confirm"
+          role="alertdialog"
+          aria-label={`Make ${p.name} a ${stageName(asking)} again?`}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            setAsking(null);
+          }}
+        >
+          <p class="card-text">
+            <b>
+              Make {p.name} a {stageName(asking)} again?
+            </b>{' '}
+            Its growth goes back to the start of that stage.
+          </p>
+          <div class="btn-row">
+            <button
+              type="button"
+              class="btn small ghost"
+              autoFocus
+              onClick={() => {
+                sfx.play('click');
+                setAsking(null);
+              }}
+            >
+              Keep it {stageName(st)}
+            </button>
+            <button type="button" class="btn small" onClick={() => setStage(asking)}>
+              Make it a {stageName(asking)}
+            </button>
+          </div>
+        </div>
+      )}
       <p class="growth-next">
         {egg ? (
           <>Hatching soon. {grows}</>
         ) : next === null ? (
           <>Fully grown! It still loves attention.</>
+        ) : speed === 0 ? (
+          <>{grows}</>
         ) : (
           <>
             <b>{nextStage ? stageName(nextStage.id) : ''}</b> in about <b>{duration(next)}</b> together. {grows}
           </>
         )}
+        {!egg && <> Click a stage to switch to it.</>}
       </p>
       <p class="saved-note">
         <Icon name="cloud" size={16} />
@@ -229,7 +305,7 @@ function EggCard() {
     <section class="card egg-card">
       <img class="egg-card-art" src={eggThumb(pal, 72)} alt="" width={72} height={72} />
       <div class="egg-card-text">
-        <h2>Your egg is on the taskbar</h2>
+        <h2>Your egg is on your desktop</h2>
         <p>Click it there a few times to help it hatch, or just wait: it hatches on its own in a minute.</p>
         <button
           class="btn primary"
@@ -293,13 +369,13 @@ function NeedsCard() {
   const p = pet.value!;
   const sp = speciesOf(p.species);
   const mood = p.happiness > 0.75 ? 'Very happy' : p.happiness > 0.5 ? 'Happy' : p.happiness > 0.3 ? 'Okay' : 'Bored';
-  const energy = p.energy < 0.25 ? 'Sleepy' : p.energy < 0.6 ? 'Rested' : 'Lively';
-  const full = p.hunger > 0.75 ? 'Hungry!' : p.hunger > 0.4 ? 'Peckish' : 'Full';
+  const energy = p.energy < 0.25 ? 'Sleepy' : p.energy < 0.6 ? 'A bit tired' : 'Lively';
+  const full = p.hunger > 0.75 ? 'Hungry!' : p.hunger > 0.4 ? 'Peckish' : 'Fed';
   return (
     <section class="card needs">
       <Meter label="Mood" value={p.happiness} text={mood} tone="mood" icon="smile" />
       <Meter label="Energy" value={p.energy} text={energy} tone="energy" icon="bolt" />
-      <Meter label="Full" value={1 - p.hunger} text={full} tone="food" icon={FOOD_ICON[foodOf(sp)]} />
+      <Meter label="Tummy" value={1 - p.hunger} text={full} tone="food" icon={FOOD_ICON[foodOf(sp)]} />
     </section>
   );
 }
@@ -452,7 +528,7 @@ function StatsCard() {
     { label: 'meals', icon: FOOD_ICON[foodOf(sp)], value: p.stats.meals, tone: 'orange' },
     { label: 'naps', icon: 'moon', value: p.stats.naps, tone: 'indigo' },
     { label: 'games', icon: 'game', value: p.stats.games, tone: 'blue' },
-    { label: 'together', icon: 'clock', value: p.activeSeconds, fmt: (n) => shortDuration(n), tone: 'green' },
+    { label: 'together', icon: 'clock', value: p.togetherSeconds, fmt: (n) => shortDuration(n), tone: 'green' },
   ];
   return (
     <section class="stats" aria-label="Stats">
@@ -545,7 +621,7 @@ export function PetView() {
   return (
     <>
       <DinoSwitcher />
-      <PetHeader />
+      <PetHeader key={pet.value!.id} />
       {!isOut && <RestingCard />}
       {isOut && egg && <EggCard />}
       <GrowthCard />

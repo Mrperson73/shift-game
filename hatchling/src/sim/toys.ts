@@ -234,6 +234,10 @@ function updateThing(p: Pet, t: Thing, dt: number) {
   t.squish = Math.max(0, t.squish - dt * 3);
   t.age += dt;
   if (t.held) return;
+  // Something else took over (food, a trick, a friend...): it lets go instead of keeping it in its mouth.
+  const a = p.act;
+  const playing = (a.k === 'toy' && a.toy === t.kind) || (a.k === 'fall' && a.resume?.k === 'toy' && a.resume.toy === t.kind);
+  if (t.carried && !playing) t.carried = false;
   if (t.carried) {
     const m = p.mouthAt();
     t.x = m.x;

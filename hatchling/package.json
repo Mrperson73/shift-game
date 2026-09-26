@@ -1,7 +1,7 @@
 {
   "name": "hatchling",
   "productName": "Hatchling",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "A dinosaur that lives on your desktop and grows up with you",
   "main": "dist/main.js",
   "private": true,

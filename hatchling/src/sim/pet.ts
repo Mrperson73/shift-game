@@ -1,7 +1,7 @@
 // The pet's life: physics on platforms, what it decides to do, its needs and growth.
 // Pure logic (no DOM): the overlay feeds it input and draws the result.
 
-import { growthOf, stageOf, type Stage } from '../pet/growth';
+import { growthOf, stageOf, stageSeconds, type Stage } from '../pet/growth';
 import { clamp, type V } from '../pet/math';
 import { applyPose, type PoseName } from '../pet/poses';
 import { type Pose, Rig } from '../pet/rig';
@@ -545,6 +545,7 @@ export class Pet {
     if (!this.hatched || this.held) return;
     const moves = this.traits.moves;
     const move = moves[this.specialIdx++ % moves.length];
+    this.pendingSpecialAt = this.time;
     if (this.act.k === 'sleep') {
       this.wake(false);
       this.pendingSpecial = move;
@@ -552,6 +553,8 @@ export class Pet {
     }
     if (!Moves.startMove(this, move, true)) this.pendingSpecial = move;
   }
+  /** When the special move was asked for: like tricks, it's forgotten after 20 s. */
+  private pendingSpecialAt = 0;
 
   setWorld(width: number, height: number, platforms: Platform[], walls: Wall[] = []) {
     walls = [...walls, ...Walls.edgeWalls(this.edges, width, height)];
@@ -597,7 +600,7 @@ export class Pet {
     this.x = clamp(this.x, this.margin * 0.5, width - this.margin * 0.5);
     for (const f of this.foods) {
       if (!f.landed || !f.platform) continue;
-      const m = ride(f.platform, this.world.platforms, f.x);
+      const m = ride(f.platform, this.platforms, f.x);
       if (m) {
         f.platform = m.p;
         f.x = m.x;
@@ -889,7 +892,8 @@ export class Pet {
   call() {
     if (!this.hatched) return;
     if (this.act.k === 'sleep') this.wake(false);
-    if (this.cursor) this.goTo(this.cursor.x, this.cursor.y, 'cursor', true);
+    // Not while flying, climbing or held: that would drop it out of the air or out of your hand.
+    if (this.cursor && this.grounded && !this.anchored && !this.held) this.goTo(this.cursor.x, this.cursor.y, 'cursor', true);
   }
 
   sleepNow() {
@@ -909,19 +913,42 @@ export class Pet {
     this.events.push({ type: 'save' });
   }
 
+  /** Picked a growth stage by hand: resize right away, without a "grew up" announcement. */
+  setStage(stage: Stage) {
+    if (!this.hatched) return;
+    this.data.activeSeconds = stageSeconds(stage);
+    const g = growthOf(this.data.activeSeconds);
+    this.rig.setGrowth(g);
+    this.stageNow = stageOf(g);
+    this.growthTimer = 0;
+    this.events.push({ type: 'burst' }, { type: 'save' });
+    if (!this.hidden && this.act.k !== 'sleep' && this.grounded) this.react('happy');
+  }
+
   // ---------------- the loop ----------------
 
   /** Advance by `dt` seconds. Needs and growth use the real time (up to 5 s per call, so a slow
-   * tick while hidden still counts); motion is capped at 0.1 s per step. */
+   * tick while hidden still counts); motion runs in steps of at most 0.1 s, so a pet ticked at a
+   * low frame rate (asleep at 5 fps) keeps real time instead of slowing down. */
   update(dt: number) {
     const real = clamp(dt, 0, 5);
-    dt = Math.min(real, 0.1);
-    this.time += dt;
     this.updateNeeds(real);
     if (this.hidden) {
+      this.time += real;
       this.hiddenFor += real;
       return;
     }
+    // At most a second of motion per call: a long stall isn't worth simulating step by step.
+    let left = Math.min(real, 1);
+    do {
+      const step = Math.min(left, 0.1);
+      this.step(step);
+      left -= step;
+    } while (left > 1e-6 && !this.hidden);
+  }
+
+  private step(dt: number) {
+    this.time += dt;
     if (this.rubDecay > 0 && (this.rubDecay -= dt) <= 0) this.rub = 0;
     this.updateFood(dt);
     this.updateBall(dt);
@@ -1017,7 +1044,10 @@ export class Pet {
     const d = this.data;
     const active = !this.locked && this.userIdle < 60;
     if (!this.hatched) return;
-    if (active) d.activeSeconds += dt * (this.settings.growthSpeed || 1);
+    if (active) {
+      d.activeSeconds += dt * (this.settings.growthSpeed ?? 1);
+      d.togetherSeconds += dt;
+    }
     const night = this.isNight();
     if (this.act.k === 'sleep') d.energy += dt / (14 * 60);
     else d.energy -= (dt / ((55 + 70 * this.species.personality.stamina) * 60)) * (night ? 1.5 : 1) * (this.hidden ? 0.5 : 1);
@@ -1177,7 +1207,8 @@ export class Pet {
       if (f.landed) continue;
       const ny = f.y + f.vy * dt + 0.35 * G * dt * dt;
       f.vy += G * 0.7 * dt;
-      const land = landingOn(this.world.platforms.filter((p) => p.y > 30), f.x, f.y, ny);
+      // Only where it can stand: food on a window it can't reach would keep it waiting under it forever.
+      const land = landingOn(this.platforms.filter((p) => p.y > 30), f.x, f.y, ny);
       if (land) {
         f.landed = true;
         f.platform = land;
@@ -1411,7 +1442,7 @@ export class Pet {
     if (this.pendingSpecial) {
       const m = this.pendingSpecial;
       this.pendingSpecial = null;
-      if (Moves.startMove(this, m, true)) return;
+      if (this.time - this.pendingSpecialAt < 20 && Moves.startMove(this, m, true)) return;
     }
     if (this.pendingTrick) {
       const t = this.pendingTrick;
@@ -1692,7 +1723,8 @@ export class Pet {
           if (a.t > 25) a.drop = false;
           return;
         }
-        if (a.t > 25) {
+        // Gives up eventually, but a small hatchling crossing a wide screen needs more than 25 s.
+        if (a.t > Math.max(25, (2.5 * this.world.width) / Math.max(1, a.run ? this.runSpeed : this.walkSpeed))) {
           this.emote('question');
           this.act = this.idleAct(2);
           return;

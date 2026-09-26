@@ -29,6 +29,11 @@ export function stageOf(growth: number): Stage {
 
 export const stageName = (s: Stage) => STAGES.find((x) => x.id === s)!.name;
 
+export const isStage = (v: unknown): v is Stage => STAGES.some((s) => s.id === v);
+
+/** Active seconds at the very start of a stage (for picking a stage by hand). */
+export const stageSeconds = (s: Stage) => STAGES.find((x) => x.id === s)!.from * HOURS_TO_ADULT * 3600;
+
 /** Active hours until the next stage, or null when adult. */
 export function hoursToNextStage(activeSeconds: number): number | null {
   const g = growthOf(activeSeconds);

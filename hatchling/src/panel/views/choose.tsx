@@ -218,15 +218,15 @@ export function Choose() {
 
         <section class="card preview" aria-label={`${sp.name} preview`}>
           <div class="preview-stage">
-            <Habitat preview subject={subject} label={`A ${adult ? 'grown-up' : 'baby'} ${sp.name} in the colour ${v.name}`} class="preview-canvas" onScene={(s) => (scene.current = s)} />
+            <Habitat preview subject={subject} label={`${adult ? 'An adult' : 'A hatchling'} ${sp.name} in the colour ${v.name}`} class="preview-canvas" onScene={(s) => (scene.current = s)} />
             <div class="preview-age">
               <Segmented
                 small
                 label="Age"
                 value={adult ? 'adult' : 'baby'}
                 options={[
-                  ['baby', 'Baby'],
-                  ['adult', 'Grown-up'],
+                  ['baby', 'Hatchling'],
+                  ['adult', 'Adult'],
                 ]}
                 onChange={(a) => {
                   setAdult(a === 'adult');
