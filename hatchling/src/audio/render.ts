@@ -43,6 +43,8 @@ export interface Stats {
   rms: number;
   /** Loudest 400 ms window, K-weighted (≈ LUFS momentary max). */
   lufs: number;
+  /** Brightness: the power-weighted mean frequency (spectral centroid), Hz. */
+  centroid: number;
   /** Mean sample value (DC offset). */
   dc: number;
   /** Largest sample before the sound starts and in the last 50 ms of the render (both should be ~0). */
@@ -114,7 +116,61 @@ export function analyse(r: Rendered, start = 0.02): Stats {
   for (let i = 0; i < s0; i++) head = Math.max(head, Math.abs(L[i]), Math.abs(R[i]));
   let tail = 0;
   for (let i = n - Math.round(0.05 * sr); i < n; i++) tail = Math.max(tail, Math.abs(L[i]), Math.abs(R[i]));
-  return { dur: r.end - start, audible: last / sr - start, peak: toDb(peak), rms: toDb(Math.sqrt(ss / (s1 - s0))), lufs, dc: sum / (2 * n), head, tail };
+  return { dur: r.end - start, audible: last / sr - start, peak: toDb(peak), rms: toDb(Math.sqrt(ss / (s1 - s0))), lufs, centroid: centroid(L, R, sr, s0, Math.min(n, Math.round((last / sr + 0.05) * sr))), dc: sum / (2 * n), head, tail };
+}
+
+/** Power-weighted mean frequency of samples a..b (Hann-windowed 2048-point frames, half overlapping). */
+function centroid(L: Float32Array, R: Float32Array, sr: number, a: number, b: number) {
+  const N = 2048;
+  const re = new Float64Array(N);
+  const im = new Float64Array(N);
+  let pw = 0;
+  let fw = 0;
+  for (let c = a; c + N <= Math.max(b, a + N); c += N / 2) {
+    for (let i = 0; i < N; i++) {
+      const j = c + i;
+      re[i] = j < L.length ? ((L[j] + R[j]) / 2) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N)) : 0;
+      im[i] = 0;
+    }
+    fft(re, im);
+    for (let k = 1; k < N / 2; k++) {
+      const p = re[k] * re[k] + im[k] * im[k];
+      pw += p;
+      fw += (p * k * sr) / N;
+    }
+  }
+  return pw > 0 ? fw / pw : 0;
+}
+
+/** In-place radix-2 FFT. */
+function fft(re: Float64Array, im: Float64Array) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      [re[i], re[j]] = [re[j], re[i]];
+      [im[i], im[j]] = [im[j], im[i]];
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (-2 * Math.PI) / len;
+    for (let i = 0; i < n; i += len) {
+      for (let k = 0; k < len / 2; k++) {
+        const c = Math.cos(ang * k);
+        const s = Math.sin(ang * k);
+        const x = i + k;
+        const y = x + len / 2;
+        const xr = re[y] * c - im[y] * s;
+        const xi = re[y] * s + im[y] * c;
+        re[y] = re[x] - xr;
+        im[y] = im[x] - xi;
+        re[x] += xr;
+        im[x] += xi;
+      }
+    }
+  }
 }
 
 /** 16-bit PCM WAV of the first `seconds` of the sound. */
