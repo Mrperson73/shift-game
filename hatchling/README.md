@@ -37,6 +37,10 @@ To uninstall, go to **Settings → Apps → Installed apps → Hatchling**. This
 
 **Saved progress.** Everything is saved automatically every few seconds (when something changed), when you lock your PC, when it goes to sleep and when Windows shuts down. It starts with Windows, so your pet is always there.
 
+**My Dinos.** Hatching another egg never replaces anyone: every dino you hatch joins **My Dinos**, where you can keep up to 24, each with its own progress. Up to 4 can be out on your desktop at once, and they notice each other. Put a dino away and it rests there, frozen in time: it doesn't grow or get hungry until you bring it out again. Releasing a dino says goodbye for good (it's remembered in your past pets).
+
+**More than one monitor.** Dinos live on every screen. Now and then one wanders off the edge of a screen and walks in on the one next to it, and you can carry one over by dragging it there. Each dino remembers its screen, and comes back to the main one if that screen is unplugged. To keep them all on your main screen, choose **Settings → Monitors → Main only**.
+
 **What it does on its own.** It walks, runs and sits along the taskbar and on windows, looks at your cursor, tilts its head, sniffs around, sneezes, shakes itself off, chases its tail and has the zoomies. Happy pets dance. Curious ones crouch, wiggle and pounce when your cursor sits still near them. Stubborn ones paw the ground and charge. Now and then a butterfly flutters by and it tries to catch it. It climbs up the sides of windows, walks along the tops, and rides along if you drag a window it's standing on. It naps when it's tired, and it gets sleepy at night.
 
 **Reacting to you.**
@@ -53,18 +57,20 @@ To uninstall, go to **Settings → Apps → Installed apps → Hatchling**. This
 | **Rub** it with your cursor | Petting: hearts, happy eyes, tail wag |
 | **Drag** it | Pick it up; let go to drop it, or flick to throw it (it lands a bit dizzy) |
 | **Double-click** it | Opens its card: growth, mood, energy, hunger and stats |
-| **Right-click** it, or the tray icon | Feed, play ball, come here, nap, wake up, hide for an hour, settings |
+| **Right-click** it, or the tray icon | Feed, play ball, come here, nap, wake up, tricks, toys, its special move, feed or wake everyone, pick a dino, hide for an hour, settings |
 
-**Feed** drops its favourite food near it (meat, fish, leaves or berries). It finds the food, climbing to it if needed. **Play ball** gives it a ball to chase and kick; you can throw the ball too. From its card you can also ask for **tricks**: dance, roar, spin, sit and shake. The pet never gets sick and never dies. Food and play just make it happier.
+**Feed** drops its favourite food near it (meat, fish, leaves or berries). It finds the food, climbing to it if needed. **Play ball** gives it a ball to chase and kick; you can throw the ball too. From its card you can also ask for **tricks** (dance, roar, spin, sit, shake, jump, bow and play dead), put out a **toy**, give it a **growth treat** or ask for its species' **special move**. The pet never gets sick and never dies. Food and play just make it happier.
 
 ## Settings
 
 - Size (small, medium, large) and energy level (calm, normal, lively)
+- Growth speed: 1×, 2×, 5× or 10× as fast as normal
 - Sounds and volume. Every species has its own voice (roars, screeches, honks, bellows, hoots or trills), synthesized live and deeper as it grows.
 - Speech: off, emotes only (hearts, zzz, !), or chatty (short lines)
 - Climb and walk on windows. When this is off, it stays on the taskbar.
-- Hide during full-screen apps (off by default), react to games, start with Windows
-- Which screen it lives on, if you have more than one
+- Hide during full-screen apps (off by default), react to games and videos, start with Windows
+- Monitors: all screens, or only the main one (if you have more than one)
+- Power: Saver (half the frame rates), Balanced, or Smooth (always 60 frames a second)
 - The window's colour theme: Auto, Meadow, Jungle, Sunset, Volcano, Ocean, Midnight or Candy
 
 ## Custom species
@@ -91,13 +97,14 @@ Tip: give an AI the `README.txt` from that folder and ask for "a Hatchling speci
 
   It doesn't inject into other programs, read their memory, hook your keyboard or mouse, or record your screen. None of this is saved or sent anywhere.
 - **Idle detection** uses only "seconds since your last input" from Windows, never which keys you pressed.
-- **Your data** lives in `%APPDATA%\Hatchling\hatchling.json`: your pet, your settings and past pets. Saves are atomic and keep a backup copy, so a crash or power cut can't corrupt your pet.
+- **Your data** lives in `%APPDATA%\Hatchling\hatchling.json`: your dinos, your settings and past pets. Saves are atomic and keep a backup copy, so a crash or power cut can't corrupt your dinos.
 
 ## Light on your PC
 
 Hatchling is made to stay open all day:
 
-- It redraws only as often as the pet needs: 60 frames a second while it runs, jumps or is carried (never more, even on 144 Hz screens), 30 while it walks, 15 while it idles, 8 while it sleeps, and none at all while it's hidden or your PC is locked.
+- It redraws each dino only as often as that dino needs: 60 frames a second while it runs, jumps or is carried (never more, even on 144 Hz screens), 30 while it walks, 15 while it idles, 8 while it sleeps, and none at all while it's hidden or your PC is locked. A sleeping dino next to a running one still only costs 8 frames a second.
+- Only screens with dinos on them get a window; dinos you put away cost nothing at all.
 - It draws on a canvas just big enough for the pet, and only checks exactly where the pet is when the cursor is near it.
 - It checks the mouse 30 times a second only while you move it, and window positions 5 times a second (faster only while you drag a window, slower while it sleeps).
 - The sound device is released a few seconds after the last sound.
@@ -119,7 +126,7 @@ Checksums (`SHA256SUMS-*.txt`) and a signed [build provenance attestation](https
 
 - Made for Windows 10 and 11 (Windows builds only).
 - Over full-screen games it stays visible unless you turn on hiding in Settings.
-- It lives on one screen at a time; choose which one in Settings.
+- Dinos walk between screens that sit side by side. To get one onto a screen above or below another, carry it there.
 - Clicks land on the pet only when the cursor is exactly over it. Everywhere else, clicks go straight through to your windows.
 
 ## Build from source
@@ -142,6 +149,6 @@ npm run dist:win     # Windows installer + portable zip → release/
 - `src/pet`: species data, growth, a procedural 2D rig for two- and four-legged dinosaurs (spine, tail springs, two-bone leg IK with planted feet, blinking, poses), and the cartoon renderer. There are no image files: every frame is drawn.
 - `src/audio`: the synthesized voices and sound effects (Web Audio, no sound files).
 - `src/sim`: the pet's life, as pure logic with unit tests. It covers physics, routes across platforms (walk, drop, jump, climb), behaviours, needs and growth.
-- `src/overlay`: a transparent, click-through window over your work area that runs the simulation, draws the pet and handles the mouse.
+- `src/overlay`: a transparent, click-through window over each screen's work area that runs the simulation of the dinos on that screen, draws each one and handles the mouse. The main process hands a dino from one screen's window to the next.
 - `src/main`: Electron main process. It handles the tray, the panel window, saving, species mods, and a small read-only Win32 layer (`desktop.ts`, via [koffi](https://koffi.dev)) for window positions, full-screen detection and the process list.
-- `src/panel`: the egg chooser, pet card and settings (Preact).
+- `src/panel`: the egg chooser, pet card, My Dinos and settings (Preact).
