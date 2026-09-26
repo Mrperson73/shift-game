@@ -50,9 +50,23 @@ export interface PetData {
   shiny: boolean;
 }
 
+/** A dino in your roster ("My Dinos"): out on the desktop or put away. */
+export interface Dino {
+  pet: PetData;
+  /** The monitor it lives on (Electron display id), or null for the main one. */
+  display: number | null;
+}
+
+/** At most this many dinos are out on the desktop at once (each one is drawn live). */
+export const OUT_MAX = 4;
+/** At most this many dinos in the roster. */
+export const ROSTER_MAX = 24;
+
 export type SizeSetting = 'S' | 'M' | 'L';
 export type SpeechSetting = 'off' | 'emotes' | 'chatty';
 export type ActivitySetting = 'calm' | 'normal' | 'lively';
+/** Where dinos live: on every monitor (they walk from one to the next), or only on the main one. */
+export type MonitorSetting = 'all' | 'primary';
 /** How many times faster than normal a pet grows (normal: about 60 active hours to adult). */
 export type GrowthSpeed = 1 | 2 | 5 | 10;
 export const GROWTH_SPEEDS: GrowthSpeed[] = [1, 2, 5, 10];
@@ -69,8 +83,8 @@ export interface Settings {
   explore: boolean;
   /** Hide while a full-screen app (a game, a video) is in front. */
   hideFullscreen: boolean;
-  /** Electron display id, or null for the primary display. */
-  display: number | null;
+  /** Every monitor, or only the main one. */
+  monitors: MonitorSetting;
   startWithWindows: boolean;
   activity: ActivitySetting;
   /** React when The Isle, Brawlhalla or Minecraft starts and stops. */
@@ -92,7 +106,7 @@ export const DEFAULT_SETTINGS: Settings = {
   speech: 'emotes',
   explore: true,
   hideFullscreen: false,
-  display: null,
+  monitors: 'all',
   startWithWindows: true,
   activity: 'normal',
   gameReactions: true,
@@ -125,7 +139,7 @@ export function newPet(species: string, variant: number, name: string, now: numb
   };
 }
 
-/** A pet you had before (kept when you hatch a new egg). */
+/** A pet you had before (kept when you release it). */
 export interface PastPet {
   name: string;
   species: string;
@@ -207,6 +221,13 @@ export type Command =
   /** Save right away (the app is about to quit). */
   | { type: 'flush' };
 
+/** Every dino that's out (a `PetCommand` target). */
+export const ALL_PETS = '*';
+
+/** A command for one dino (`pet`: its id), for all of them (ALL_PETS), or, without `pet`, for the
+ * selected one (from the panel and tray) or every dino on that monitor (to an overlay). */
+export type PetCommand = Command & { pet?: string };
+
 export type TrickName = 'dance' | 'roar' | 'spin' | 'sit' | 'shake' | 'jump' | 'bow' | 'playdead';
 export const TRICKS: TrickName[] = ['dance', 'roar', 'spin', 'sit', 'shake', 'jump', 'bow', 'playdead'];
 
@@ -214,10 +235,28 @@ export const TRICKS: TrickName[] = ['dance', 'roar', 'spin', 'sit', 'shake', 'ju
 export type ToyKind = 'ball' | 'bubbles' | 'bone' | 'duck' | 'laser' | 'puddle';
 export const TOYS: ToyKind[] = ['ball', 'bubbles', 'bone', 'duck', 'laser', 'puddle'];
 
-export interface OverlayInit {
+/** How a dino shows up on a monitor. */
+export type Arrival =
+  /** Walks in from a screen edge (it walked off the monitor on that side); `y` is where its feet were. */
+  | { kind: 'edge'; side: 'left' | 'right'; y: number; ground: boolean }
+  /** Dropped here from another monitor: it falls from this point (overlay coordinates). */
+  | { kind: 'drop'; x: number; y: number }
+  /** Brought out from My Dinos: it pops in where it was last. */
+  | { kind: 'poof' };
+
+/** A dino for an overlay to host, and how it arrives (none: it's just there, like at startup). */
+export interface HostedPet {
   pet: PetData;
+  arrive?: Arrival;
+}
+
+export interface OverlayInit {
+  /** The dinos on this monitor. */
+  pets: HostedPet[];
   settings: Settings;
   species: unknown[];
+  /** The monitor (Electron display id). */
+  display: number;
   /** Work area size in CSS pixels. */
   width: number;
   height: number;
@@ -226,16 +265,28 @@ export interface OverlayInit {
   now: number;
 }
 
+export interface DisplayInfo {
+  id: number;
+  label: string;
+  primary: boolean;
+}
+
 export interface PanelInit {
+  /** The selected dino (the one the card is for). */
   pet: PetData | null;
+  /** Every dino, in the order they hatched. */
+  roster: Dino[];
+  /** Ids of the dinos out on the desktop. */
+  out: string[];
+  selected: string | null;
   settings: Settings;
   species: unknown[];
   problems: ModProblem[];
-  displays: { id: number; label: string; primary: boolean }[];
+  displays: DisplayInfo[];
   version: string;
   platform: string;
   modsDir: string;
-  view: 'choose' | 'card' | 'settings';
+  view: 'choose' | 'card' | 'dinos' | 'settings';
   /** Past pets, oldest first. */
   history: PastPet[];
   /** Whether Windows is in dark mode (for the 'auto' theme). */

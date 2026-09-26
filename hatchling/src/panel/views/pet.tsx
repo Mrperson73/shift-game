@@ -4,17 +4,21 @@
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { paletteFor, variantOf } from '../../pet/draw';
-import { growthOf, hoursToNextStage, STAGES, stageName, stageOf } from '../../pet/growth';
+import { hoursToNextStage, STAGES, stageName, stageOf } from '../../pet/growth';
+import { movesOf, type SignatureMove } from '../../pet/species';
 import { type Achievement, type AchievementIcon, achievementsOf } from '../../shared/achievements';
-import type { TrickName } from '../../shared/types';
+import { moveName, toyName, trickName } from '../../shared/labels';
+import { OUT_MAX, type ToyKind, TOYS, type TrickName } from '../../shared/types';
 import { Icon, type IconName } from '../icons';
 import { sfx } from '../sfx';
-import { command, growth, history, pet, reactions, type Reaction, speciesOf } from '../state';
-import { eggThumb, petThumb } from '../thumbs';
-import { CountUp, Meter } from '../ui';
-import { ago, dateText, duration, type FoodKind, foodOf, shortDuration } from '../util';
+import { command, dinoAction, growth, out, pet, petOut, reactions, type Reaction, roster, selected, settings, speciesOf } from '../state';
+import { eggThumb } from '../thumbs';
+import { CountUp, Meter, toast } from '../ui';
+import { ago, duration, type FoodKind, foodOf, shortDuration } from '../util';
+import { dinoThumb } from './dinos';
 
 const FOOD_ICON: Record<FoodKind, IconName> = { meat: 'meat', fish: 'fish', leaf: 'leaf', berry: 'berry' };
+const TRICKS_SHOWN: TrickName[] = ['dance', 'roar', 'spin', 'sit', 'shake', 'jump', 'bow', 'playdead'];
 
 /** Replays a CSS "pop" animation on the element that was pressed. */
 function pop(el: EventTarget | null) {
@@ -22,6 +26,41 @@ function pop(el: EventTarget | null) {
   el.classList.remove('pop');
   void el.offsetWidth;
   el.classList.add('pop');
+}
+
+// ---------------- switching between dinos ----------------
+
+/** Your dinos in a row (the ones that are out first): pick the one this card is for. */
+function DinoSwitcher() {
+  const list = roster.value;
+  if (list.length < 2) return null;
+  const outs = out.value;
+  const sorted = [...list.filter((d) => outs.includes(d.pet.id)), ...list.filter((d) => !outs.includes(d.pet.id))];
+  return (
+    <nav class="switcher" aria-label="Your dinos">
+      {sorted.map((d) => {
+        const on = d.pet.id === selected.value;
+        const away = !outs.includes(d.pet.id);
+        return (
+          <button
+            key={d.pet.id}
+            type="button"
+            class={`switch-dino ${on ? 'on' : ''} ${away ? 'away' : ''}`}
+            aria-pressed={on}
+            title={away ? `${d.pet.name} (resting)` : d.pet.name}
+            onClick={() => {
+              if (on) return;
+              sfx.play('select');
+              void dinoAction({ type: 'select', id: d.pet.id });
+            }}
+          >
+            <img src={dinoThumb(d.pet, 44, 34)} alt="" width={44} height={34} />
+            <span class="switch-name">{d.pet.name}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
 }
 
 // ---------------- header ----------------
@@ -123,7 +162,10 @@ function GrowthCard() {
     fill = to === undefined ? 1 : (si + 1 + (g - from) / (to - from)) / 4;
   }
   const pct = Math.floor(g * 100);
-  const next = hoursToNextStage(p.activeSeconds);
+  const speed = settings.value?.growthSpeed ?? 1;
+  const left = hoursToNextStage(p.activeSeconds);
+  const next = left === null ? null : left / speed;
+  const grows = !petOut.value ? 'It grows while it is out on your desktop.' : speed > 1 ? `It grows ${speed}× as fast while you're at your PC.` : "It grows while you're at your PC.";
   const nextStage = STAGES.find((s) => s.from > g);
   const stageLabel = egg ? 'Egg' : stageName(st);
   return (
@@ -157,12 +199,12 @@ function GrowthCard() {
       </div>
       <p class="growth-next">
         {egg ? (
-          <>Hatching soon. Then it grows while you're at your PC.</>
+          <>Hatching soon. {grows}</>
         ) : next === null ? (
           <>Fully grown! It still loves attention.</>
         ) : (
           <>
-            <b>{nextStage ? stageName(nextStage.id) : ''}</b> in about <b>{duration(next)}</b> together. It grows while you're at your PC.
+            <b>{nextStage ? stageName(nextStage.id) : ''}</b> in about <b>{duration(next)}</b> together. {grows}
           </>
         )}
       </p>
@@ -205,6 +247,46 @@ function EggCard() {
   );
 }
 
+// ---------------- put away ----------------
+
+function RestingCard() {
+  const p = pet.value!;
+  const full = out.value.length >= OUT_MAX;
+  const [busy, setBusy] = useState(false);
+  const bringOut = async (el: EventTarget | null) => {
+    if (busy) return;
+    pop(el);
+    setBusy(true);
+    const err = await dinoAction({ type: 'out', id: p.id });
+    setBusy(false);
+    if (err) {
+      sfx.play('error');
+      toast("Can't bring it out yet", { icon: 'warn', sub: err });
+    } else {
+      sfx.play('open');
+      reactions.emit('sparkle');
+    }
+  };
+  return (
+    <section class="card resting-card">
+      <span class="resting-art" aria-hidden="true">
+        <Icon name="home" size={30} />
+      </span>
+      <div class="resting-text">
+        <h2>{p.name} is resting</h2>
+        <p>
+          Put away in My Dinos, frozen in time: it doesn't grow or get hungry until you bring it out.
+          {full && ` ${OUT_MAX} dinos are out already, so put one away first.`}
+        </p>
+        <button class="btn primary" disabled={full || busy} onClick={(e) => void bringOut(e.currentTarget)}>
+          <Icon name="monitor" size={18} />
+          Bring {p.name} out
+        </button>
+      </div>
+    </section>
+  );
+}
+
 // ---------------- needs ----------------
 
 function NeedsCard() {
@@ -222,24 +304,37 @@ function NeedsCard() {
   );
 }
 
-// ---------------- actions and tricks ----------------
+// ---------------- actions, tricks and toys ----------------
+
+const TRICK_ICON: Partial<Record<TrickName, IconName>> = { dance: 'note', roar: 'roar', spin: 'spin', sit: 'sit', shake: 'shake', jump: 'jump', bow: 'bow', playdead: 'playdead' };
+const TOY_ICON: Partial<Record<ToyKind, IconName>> = { ball: 'ball', bubbles: 'bubbles', bone: 'bone', duck: 'duck', laser: 'laser', puddle: 'puddle' };
+const MOVE_ICON: Partial<Record<SignatureMove, IconName>> = {
+  stomp: 'footprint',
+  headbutt: 'bolt',
+  tailSwipe: 'spin',
+  charge: 'bolt',
+  fish: 'fish',
+  honk: 'roar',
+  display: 'sparkle',
+  browse: 'leaf',
+  dig: 'paw',
+  screech: 'roar',
+  fly: 'wing',
+  rake: 'paw',
+  whip: 'spin',
+  curl: 'shield',
+};
 
 function ActionsCard() {
   const p = pet.value!;
   const sp = speciesOf(p.species);
+  const move = movesOf(sp)[0];
   const actions: { id: 'feed' | 'play' | 'call' | 'sleep' | 'wake'; label: string; icon: IconName; tone: string }[] = [
     { id: 'feed', label: 'Feed', icon: FOOD_ICON[foodOf(sp)], tone: 'orange' },
     { id: 'play', label: 'Play', icon: 'ball', tone: 'blue' },
     { id: 'call', label: 'Come here', icon: 'wave', tone: 'yellow' },
     { id: 'sleep', label: 'Nap', icon: 'moon', tone: 'indigo' },
     { id: 'wake', label: 'Wake', icon: 'sun', tone: 'amber' },
-  ];
-  const tricks: { id: TrickName; label: string; icon: IconName }[] = [
-    { id: 'dance', label: 'Dance', icon: 'note' },
-    { id: 'roar', label: 'Roar', icon: 'roar' },
-    { id: 'spin', label: 'Spin', icon: 'spin' },
-    { id: 'sit', label: 'Sit', icon: 'sit' },
-    { id: 'shake', label: 'Shake', icon: 'shake' },
   ];
   const [busy, setBusy] = useState<TrickName | null>(null);
   const timer = useRef(0);
@@ -259,6 +354,12 @@ function ActionsCard() {
     setBusy(id);
     timer.current = window.setTimeout(() => setBusy(null), 1800);
   };
+  const doToy = (toy: ToyKind, el: EventTarget | null) => {
+    pop(el);
+    sfx.play('click');
+    command({ type: 'toy', toy });
+    reactions.emit(toy);
+  };
   return (
     <section class="card actions-card">
       <h2 class="card-title">
@@ -275,15 +376,62 @@ function ActionsCard() {
           </button>
         ))}
       </div>
+      <div class="extras">
+        <button
+          type="button"
+          class="extra tone-amber"
+          title="A golden snack: it grows a little right away"
+          onClick={(e) => {
+            pop(e.currentTarget);
+            sfx.play('coin');
+            command({ type: 'treat' });
+            reactions.emit('treat');
+          }}
+        >
+          <span class="extra-icon">
+            <Icon name="treat" size={18} />
+          </span>
+          Growth treat
+        </button>
+        <button
+          type="button"
+          class="extra tone-pink"
+          title={`${sp.name}'s special move`}
+          onClick={(e) => {
+            pop(e.currentTarget);
+            sfx.play('click');
+            command({ type: 'special' });
+            reactions.emit('special');
+          }}
+        >
+          <span class="extra-icon">
+            <Icon name={MOVE_ICON[move] ?? 'star'} size={18} />
+          </span>
+          {moveName(move)}
+        </button>
+      </div>
       <div class="tricks-row">
         <span class="tricks-title" id="tricks-title">
           Tricks
         </span>
         <div class="tricks" role="group" aria-labelledby="tricks-title">
-          {tricks.map((t) => (
-            <button key={t.id} class={`trick ${busy === t.id ? 'doing' : ''}`} aria-disabled={busy !== null} onClick={(e) => doTrick(t.id, e.currentTarget)}>
-              <Icon name={t.icon} size={16} />
-              {t.label}
+          {TRICKS_SHOWN.map((t) => (
+            <button key={t} class={`trick ${busy === t ? 'doing' : ''}`} aria-disabled={busy !== null} onClick={(e) => doTrick(t, e.currentTarget)}>
+              <Icon name={TRICK_ICON[t] ?? 'star'} size={16} />
+              {trickName(t)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div class="tricks-row">
+        <span class="tricks-title" id="toys-title">
+          Toys
+        </span>
+        <div class="toys" role="group" aria-labelledby="toys-title">
+          {TOYS.map((t) => (
+            <button key={t} type="button" class="toy" title={toyName(t)} onClick={(e) => doToy(t, e.currentTarget)}>
+              <Icon name={TOY_ICON[t] ?? 'ball'} size={20} />
+              <span class="toy-name">{toyName(t)}</span>
             </button>
           ))}
         </div>
@@ -389,66 +537,24 @@ function BadgesCard() {
   );
 }
 
-// ---------------- past pets ----------------
-
-function PastPets() {
-  const list = history.value;
-  if (!list.length) return null;
-  return (
-    <section class="card past-card">
-      <h2 class="card-title">
-        <Icon name="history" size={18} />
-        Past pets
-        <span class="card-count">{list.length}</span>
-      </h2>
-      <ul class="past">
-        {list
-          .slice()
-          .reverse()
-          .map((h, i) => {
-            const sp = speciesOf(h.species);
-            const known = sp.id === h.species;
-            const g = growthOf(h.activeSeconds);
-            const pal = paletteFor(sp, h.variant, h.colors ?? null);
-            return (
-              <li key={`${h.retiredAt}-${i}`}>
-                <img class="past-img" src={petThumb(sp, pal, g, 64, 48)} alt="" width={64} height={48} />
-                <div class="past-text">
-                  <strong>
-                    {h.name}
-                    {h.shiny && <Icon name="sparkle" size={13} class="past-shiny" />}
-                  </strong>
-                  <span>
-                    {known ? sp.name : h.species} · {h.hatchedAt === null ? 'Egg' : stageName(stageOf(g))} · {duration(h.activeSeconds / 3600)} together
-                  </span>
-                  <span class="past-dates">
-                    {h.hatchedAt ? dateText(h.hatchedAt) : 'Never hatched'} – {dateText(h.retiredAt)}
-                  </span>
-                </div>
-              </li>
-            );
-          })}
-      </ul>
-    </section>
-  );
-}
-
 export function PetView() {
   const egg = pet.value!.hatchedAt === null;
+  const isOut = petOut.value;
   return (
     <>
+      <DinoSwitcher />
       <PetHeader />
-      {egg && <EggCard />}
+      {!isOut && <RestingCard />}
+      {isOut && egg && <EggCard />}
       <GrowthCard />
       {!egg && (
         <>
           <NeedsCard />
-          <ActionsCard />
+          {isOut && <ActionsCard />}
           <StatsCard />
           <BadgesCard />
         </>
       )}
-      <PastPets />
       <p class="tips">
         <Icon name="info" size={15} />
         Drag it around, rub it with your cursor, double-click it for this card, right-click it for the menu.

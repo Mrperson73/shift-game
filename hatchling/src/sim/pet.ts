@@ -26,7 +26,9 @@ export type SimEvent =
   | { type: 'squash'; amount: number }
   /** A burst of sparkles around the pet (growing up, shiny). */
   | { type: 'burst' }
-  | { type: 'save' };
+  | { type: 'save' }
+  /** It walked off an 'exit' edge (see Pet.leave): the overlay hands it to the monitor there. */
+  | { type: 'exit'; side: 'left' | 'right'; y: number; ground: boolean };
 
 export interface Food {
   id: number;
@@ -305,6 +307,11 @@ export class Pet {
   setWorld(width: number, height: number, platforms: Platform[], walls: Wall[] = []) {
     this.world = { width, height, platforms: platforms.some((p) => p.id === GROUND) ? platforms : [...platforms, ground(width, height)], walls };
     if (this.held) return;
+    if (this.crossing) {
+      // Walking over the screen edge to (or from) the next monitor: stay on the ground, off screen.
+      this.platform = this.world.platforms.find((p) => p.id === GROUND) ?? this.platform;
+      return;
+    }
     const a = this.act;
     if (a.k === 'climb') {
       const moved = rideWall(a.wall, walls, this.y);
@@ -758,6 +765,7 @@ export class Pet {
 
   private physics(dt: number) {
     if (this.held || this.anchored) return;
+    if (this.crossing && this.cross(dt)) return;
     const w = this.world;
     const lo = this.margin * 0.5;
     const hi = w.width - this.margin * 0.5;
@@ -1802,6 +1810,86 @@ export class Pet {
       return;
     }
     this.act = this.idleAct(1 + this.env.rand() * 3);
+  }
+
+  // ---------------- moving to another monitor ----------------
+  // The overlay hands a dino over to the monitor next to it: it walks off an 'exit' edge here
+  // (leave), and walks in from the matching edge there (enter), or is dropped in (dropIn).
+
+  /** Walking out through an 'exit' edge, or in from one (physics lets it past the screen edge). */
+  crossing: { side: 'left' | 'right'; dir: 'out' | 'in' } | null = null;
+
+  /** How far the drawing reaches behind the feet, px (tail and hips). */
+  private get behind() {
+    const p = this.rig.p;
+    return (p.tailLen + p.bodyLen * 0.5 + p.hipR) * this.px;
+  }
+
+  /** Walks off the screen through its `side` edge (an 'exit' edge) to the monitor there, and emits
+   * 'exit' once it's out of sight. False when it can't go now (an egg, asleep, carried, up high). */
+  leave(side: 'left' | 'right'): boolean {
+    if (!this.hatched || this.held || !this.grounded || this.anchored || this.asleep || this.platform.id !== GROUND || this.edges[side] !== 'exit') return false;
+    const toX = side === 'right' ? this.world.width + this.behind + 60 : -this.behind - 60;
+    const run = Math.abs(toX - this.x) > 700;
+    this.crossing = { side, dir: 'out' };
+    this.facing = side === 'right' ? 1 : -1;
+    this.act = { k: 'walk', toX, run, dur: 10 + (Math.abs(toX - this.x) / (run ? this.runSpeed : this.walkSpeed)) * 2, t: 0 };
+    return true;
+  }
+
+  /** Arrives from the monitor on `side`: walks in along the ground from just off that edge, or,
+   * when it didn't leave from the ground, drops in at height `y`. */
+  enter(side: 'left' | 'right', y: number, onGround: boolean) {
+    const w = this.world;
+    this.held = false;
+    this.vx = 0;
+    this.facing = side === 'left' ? 1 : -1;
+    if (!this.hatched || !onGround) {
+      this.dropIn(side === 'left' ? 0 : w.width, y);
+      return;
+    }
+    this.rot = 0;
+    this.vy = 0;
+    this.grounded = true;
+    this.platform = w.platforms.find((p) => p.id === GROUND) ?? ground(w.width, w.height);
+    this.y = this.platform.y;
+    const inX = Math.min(w.width / 2, this.margin * 2 + 120 + this.env.rand() * 240);
+    this.x = side === 'left' ? -this.reach : w.width + this.reach;
+    this.crossing = { side, dir: 'in' };
+    this.act = { k: 'walk', toX: side === 'left' ? inX : w.width - inX, run: false, dur: 30, t: 0 };
+  }
+
+  /** Dropped in from another monitor at (x, y): it falls from there. */
+  dropIn(x: number, y: number) {
+    const w = this.world;
+    this.held = false;
+    this.crossing = null;
+    this.x = clamp(x, this.margin * 0.5, w.width - this.margin * 0.5);
+    this.y = clamp(y, this.heightPx * 0.9, w.height);
+    this.vx = 0;
+    this.startFall(0);
+  }
+
+  /** Moves a crossing dino along the ground past the screen edge, where physics() would stop it.
+   * False once the crossing is over or called off (picked up, food, a nap): physics takes over. */
+  private cross(dt: number): boolean {
+    const c = this.crossing!;
+    if (!this.grounded || this.platform.id !== GROUND || this.act.k !== 'walk') {
+      this.crossing = null;
+      return false;
+    }
+    const w = this.world;
+    this.x += this.vx * dt;
+    this.y = this.platform.y;
+    if (c.dir === 'in') {
+      if (this.x > this.margin && this.x < w.width - this.margin) this.crossing = null;
+    } else if (c.side === 'right' ? this.x - this.behind > w.width : this.x + this.behind < 0) {
+      this.crossing = null;
+      this.vx = 0;
+      this.act = this.idleAct(1);
+      this.events.push({ type: 'exit', side: c.side, y: this.y, ground: true });
+    }
+    return true;
   }
 
   // ---------------- output ----------------

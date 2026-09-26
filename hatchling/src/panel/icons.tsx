@@ -299,6 +299,90 @@ const P = {
   ),
   arrow: <path d="M5 12h13M13 7l5 5-5 5" />,
   plus: <path d="M12 5v14M5 12h14" />,
+  jump: (
+    <>
+      <path d="M12 15.5V4.5M7.8 8.7L12 4.5l4.2 4.2" />
+      <path class="f" d="M7.5 20.5a4.5 2.3 0 0 1 9 0z" />
+      <path d="M4.5 20.5h15" />
+    </>
+  ),
+  bow: (
+    <>
+      <path class="f" d="M12 12L4.5 7.5v9zM12 12l7.5-4.5v9z" />
+      <circle class="s" cx="12" cy="12" r="2.1" />
+    </>
+  ),
+  playdead: (
+    <>
+      <circle class="f" cx="12" cy="12" r="8.5" />
+      <path d="M7.6 8.6l2.6 2.6M10.2 8.6l-2.6 2.6M13.8 8.6l2.6 2.6M16.4 8.6l-2.6 2.6M9 16h6" />
+    </>
+  ),
+  bubbles: (
+    <>
+      <circle class="f" cx="9" cy="14.5" r="5" />
+      <circle class="f" cx="16.8" cy="7.6" r="3.3" />
+      <circle cx="18" cy="16.8" r="1.9" />
+      <path d="M6.8 12.6a2.6 2.6 0 0 1 2-1.8" />
+    </>
+  ),
+  bone: <path class="f" transform="rotate(-30 12 12)" d="M8.6 10.6H15.4A2.4 2.4 0 1 1 17.6 12A2.4 2.4 0 1 1 15.4 13.4H8.6A2.4 2.4 0 1 1 6.4 12A2.4 2.4 0 1 1 8.6 10.6Z" />,
+  duck: (
+    <>
+      <path class="f" d="M3.5 13c0 4.2 3.4 7 8.5 7 5 0 8.5-2.6 8.5-6.2 0-1.9-1.2-3.1-3.2-3.2a4.2 4.2 0 1 0-7.4-.8C7 9.5 3.5 10 3.5 13z" />
+      <path class="s" d="M17.6 7.3l3.4.7-3 1.6z" />
+      <circle class="s" cx="14.7" cy="8.2" r="1" />
+    </>
+  ),
+  laser: (
+    <>
+      <path class="f" d="M3.6 17.4l7.8-7.8 3 3-7.8 7.8a2.1 2.1 0 0 1-3-3z" />
+      <path d="M14.8 9.2l3.4-3.4" stroke-dasharray="1.5 2" />
+      <circle class="s" cx="20" cy="4" r="1.8" />
+    </>
+  ),
+  puddle: (
+    <>
+      <ellipse class="f" cx="12" cy="17.5" rx="8.5" ry="3" />
+      <path d="M12 3.5c2 2.8 3.2 4.6 3.2 6.2a3.2 3.2 0 0 1-6.4 0c0-1.6 1.2-3.4 3.2-6.2z" />
+    </>
+  ),
+  wing: (
+    <>
+      <path class="f" d="M3 17.5c4.6 0 9.2-2 12.7-5.6S20.8 4 20.8 4c-4.6.5-8.7 2.6-11.7 5.6S4 15.4 3 17.5z" />
+      <path d="M7.6 14.6l3.2.6M10.6 11.6l3.5.4M13.6 8.6l3.6.2" />
+    </>
+  ),
+  treat: (
+    <>
+      <circle class="f" cx="10.5" cy="13.5" r="7.5" />
+      <circle class="s" cx="8" cy="11.4" r="1.1" />
+      <circle class="s" cx="12.4" cy="16" r="1.1" />
+      <circle class="s" cx="13" cy="10.8" r="0.9" />
+      <path class="s" d="M19 2.5c.3 1.5 1 2.2 2.5 2.5-1.5.3-2.2 1-2.5 2.5-.3-1.5-1-2.2-2.5-2.5 1.5-.3 2.2-1 2.5-2.5z" />
+    </>
+  ),
+  home: (
+    <>
+      <path class="f" d="M4.5 10.8L12 4.5l7.5 6.3V19a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 19z" />
+      <path d="M9.8 20.5v-5.3h4.4v5.3" />
+    </>
+  ),
+  screens: (
+    <>
+      <rect class="f" x="2.5" y="4.5" width="11" height="8" rx="1.8" />
+      <rect class="f" x="10.5" y="9" width="11" height="8" rx="1.8" />
+      <path d="M14 20h4M16 17v3" />
+    </>
+  ),
+  battery: (
+    <>
+      <rect class="f" x="3" y="7.5" width="16" height="9" rx="2.5" />
+      <path d="M21.5 10.5v3" />
+      <path class="s" d="M6 10h5v4H6z" />
+    </>
+  ),
+  shield: <path class="f" d="M12 3.5l7 2.8v5.2c0 4.3-2.9 7.6-7 9-4.1-1.4-7-4.7-7-9V6.3z" />,
   github: (
     <path
       class="s"

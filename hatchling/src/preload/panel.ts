@@ -6,6 +6,7 @@ const api: PanelApi = {
   hatch: (o) => ipcRenderer.invoke('panel:hatch', o),
   setSettings: (s) => ipcRenderer.invoke('panel:settings', s),
   command: (c) => ipcRenderer.send('panel:command', c),
+  dino: (a) => ipcRenderer.invoke('panel:dino', a),
   newEgg: () => ipcRenderer.invoke('panel:newEgg'),
   openModsFolder: () => ipcRenderer.send('panel:mods'),
   openExternal: (url) => ipcRenderer.send('panel:external', url),

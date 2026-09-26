@@ -1,16 +1,18 @@
-// The egg chooser: a shelf of eggs, a preview of what hatches from the one you pick (as a baby
-// or all grown up), its colours, a name, and a big Hatch button.
+// The egg chooser: a shelf of eggs (filtered by what they eat, or flyers), a preview of what
+// hatches from the one you pick (as a baby or all grown up), its colours, a name, and a big Hatch
+// button. A new egg joins My Dinos; nobody is replaced.
 
 import type { JSX } from 'preact';
 import { useMemo, useRef, useState } from 'preact/hooks';
 import { palette, variantOf } from '../../pet/draw';
 import type { Personality, SpeciesDef } from '../../pet/species';
+import { OUT_MAX, ROSTER_MAX } from '../../shared/types';
 import { confettiFrom } from '../fx';
-import { Icon } from '../icons';
+import { Icon, type IconName } from '../icons';
 import { randomName } from '../names';
 import type { Scene, Subject } from '../scene';
 import { sfx } from '../sfx';
-import { api, pet, reducedMotion, setView, settings, species } from '../state';
+import { api, out, pet, reducedMotion, roster, setView, settings, species } from '../state';
 import { eggThumb } from '../thumbs';
 import { Habitat, radioKeys, Segmented, SwitchRow, toast } from '../ui';
 import { type FoodKind, foodOf, lengthText } from '../util';
@@ -25,6 +27,32 @@ const TRAITS: [keyof Personality, string][] = [
 ];
 
 const FOOD_WORD: Record<FoodKind, string> = { meat: 'Meat', fish: 'Fish', leaf: 'Leaves', berry: 'Berries' };
+
+type Filter = 'all' | 'meat' | 'plant' | 'sky' | 'mods';
+const FILTERS: { id: Filter; label: string; icon: IconName; has: (s: SpeciesDef) => boolean }[] = [
+  { id: 'all', label: 'All', icon: 'egg', has: () => true },
+  { id: 'meat', label: 'Meat-eaters', icon: 'meat', has: (s) => s.diet === 'carnivore' },
+  { id: 'plant', label: 'Plant-eaters', icon: 'leaf', has: (s) => s.diet === 'herbivore' },
+  { id: 'sky', label: 'Flyers', icon: 'wing', has: (s) => !!s.features.wings },
+  { id: 'mods', label: 'Custom', icon: 'puzzle', has: (s) => !!s.mod },
+];
+
+/** The shelf is one list: arrow keys move along it (it scrolls sideways in two rows). */
+function shelfKeys(e: KeyboardEvent) {
+  const me = e.currentTarget as HTMLElement;
+  const radios = [...(me.parentElement?.querySelectorAll<HTMLElement>('[role="radio"]') ?? [])];
+  const i = radios.indexOf(me);
+  let n = i;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') n = i + 1;
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') n = i - 1;
+  else if (e.key === 'Home') n = 0;
+  else if (e.key === 'End') n = radios.length - 1;
+  else return;
+  e.preventDefault();
+  n = (n + radios.length) % radios.length;
+  radios[n].focus();
+  radios[n].click();
+}
 
 function Traits(props: { sp: SpeciesDef }) {
   return (
@@ -48,10 +76,13 @@ function Traits(props: { sp: SpeciesDef }) {
 }
 
 export function Choose() {
-  const list = species.value;
+  const all = species.value;
   const has = pet.value !== null;
-  const [selId, setSelId] = useState(list[0].id);
-  const sp = list.find((s) => s.id === selId) ?? list[0];
+  const [filter, setFilter] = useState<Filter>('all');
+  const filters = FILTERS.filter((f) => f.id === 'all' || all.some(f.has));
+  const list = all.filter((FILTERS.find((f) => f.id === filter) ?? FILTERS[0]).has);
+  const [selId, setSelId] = useState(all[0].id);
+  const sp = all.find((s) => s.id === selId) ?? all[0];
   const [variant, setVariant] = useState(0);
   const [adult, setAdult] = useState(false);
   const [name, setName] = useState(() => randomName(sp.id));
@@ -64,6 +95,9 @@ export function Choose() {
   const pal = useMemo(() => palette(v), [v]);
   const display = name.trim() || sp.name;
   const food = foodOf(sp);
+  const full = roster.value.length >= ROSTER_MAX;
+  // Only so many can be out: the one out longest goes for a rest when a new egg comes.
+  const bumped = out.value.length >= OUT_MAX ? roster.value.find((d) => d.pet.id === out.value[0])?.pet.name : undefined;
 
   const choose = (next: SpeciesDef) => {
     if (next.id === sp.id) return;
@@ -74,8 +108,19 @@ export function Choose() {
     sfx.call(next.voice, adult ? 1 : 0);
   };
 
+  const pickFilter = (f: Filter) => {
+    setFilter(f);
+    const shown = all.filter((FILTERS.find((x) => x.id === f) ?? FILTERS[0]).has);
+    if (shown.length && !shown.some((s) => s.id === sp.id)) {
+      const next = shown[0];
+      setSelId(next.id);
+      setVariant(0);
+      if (!named) setName(randomName(next.id));
+    }
+  };
+
   const hatch = async () => {
-    if (busy) return;
+    if (busy || full) return;
     setBusy(true);
     sfx.play('hatch');
     confettiFrom(hatchBtn.current, { count: 90, colors: [v.body, v.belly, v.accent, v.pattern, '#ffd23f', '#ffffff'] });
@@ -100,10 +145,49 @@ export function Choose() {
       <div class="choose-scroll">
         <header class="choose-head">
           <h1>{has ? 'Choose a new egg' : 'Choose your egg'}</h1>
-          <p>It hatches on your taskbar and grows up while you use your PC.</p>
+          <p>{has ? 'It joins your dinos: nobody is replaced. It hatches on your taskbar.' : 'It hatches on your taskbar and grows up while you use your PC.'}</p>
         </header>
 
-        <div class="eggs" role="radiogroup" aria-label="Species">
+        {filters.length > 2 && (
+          <div class="egg-filters" role="radiogroup" aria-label="Show">
+            {filters.map((f) => {
+              const on = f.id === filter;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  tabIndex={on ? 0 : -1}
+                  class={`egg-filter ${on ? 'on' : ''}`}
+                  onClick={() => {
+                    if (on) return;
+                    sfx.play('tab');
+                    pickFilter(f.id);
+                  }}
+                  onKeyDown={(e) => radioKeys(e)}
+                >
+                  <Icon name={f.icon} size={15} />
+                  {f.label}
+                  <span class="egg-filter-n">{all.filter(f.has).length}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div
+          class={`eggs ${list.length > 8 ? 'scrolls' : ''}`}
+          role="radiogroup"
+          aria-label="Species"
+          onWheel={(e) => {
+            // A mouse wheel scrolls the shelf sideways.
+            const el = e.currentTarget;
+            if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+            el.scrollLeft += e.deltaY;
+            e.preventDefault();
+          }}
+        >
           {list.map((s) => {
             const on = s.id === sp.id;
             return (
@@ -117,14 +201,14 @@ export function Choose() {
                 class={`egg-tile ${on ? 'on' : ''}`}
                 title={`${s.name} (${s.latin})`}
                 onClick={() => choose(s)}
-                onKeyDown={(e) => radioKeys(e)}
+                onKeyDown={(e) => shelfKeys(e)}
               >
                 <span class="egg-nest" aria-hidden="true">
                   <img src={eggThumb(palette(on ? v : s.variants[0]), 60)} alt="" width={60} height={60} />
                 </span>
                 <span class="egg-name">{s.name}</span>
-                <span class={`egg-diet ${s.diet}`} aria-hidden="true">
-                  <Icon name={s.diet === 'carnivore' ? 'meat' : 'leaf'} size={12} />
+                <span class={`egg-diet ${s.features.wings ? 'flyer' : s.diet}`} aria-hidden="true">
+                  <Icon name={s.features.wings ? 'wing' : s.diet === 'carnivore' ? 'meat' : 'leaf'} size={12} />
                 </span>
                 {s.mod && <span class="egg-mod">Mod</span>}
               </button>
@@ -264,6 +348,12 @@ export function Choose() {
       </div>
 
       <footer class="choose-foot">
+        {(full || bumped) && (
+          <p class={`choose-note ${full ? 'bad' : ''}`}>
+            <Icon name={full ? 'warn' : 'home'} size={15} />
+            {full ? `You have ${ROSTER_MAX} dinos. Release one in My Dinos to make room.` : `${bumped} will rest in My Dinos to make room (${OUT_MAX} can be out at once).`}
+          </p>
+        )}
         {has && (
           <button
             type="button"
@@ -276,7 +366,7 @@ export function Choose() {
             Cancel
           </button>
         )}
-        <button ref={hatchBtn} type="button" class={`btn primary big hatch-btn ${busy ? 'hatching' : ''}`} disabled={busy} onClick={() => void hatch()}>
+        <button ref={hatchBtn} type="button" class={`btn primary big hatch-btn ${busy ? 'hatching' : ''}`} disabled={busy || full} onClick={() => void hatch()}>
           <Icon name="eggCrack" size={22} />
           Hatch {display}!
         </button>
