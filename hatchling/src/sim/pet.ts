@@ -366,6 +366,8 @@ export class Pet {
   private lastSteps = 0;
   private stepSoundAt = -1e9;
   private pendingTrick: TrickName | null = null;
+  /** When the pending trick was asked for (it's forgotten if it can't happen soon). */
+  private pendingTrickAt = 0;
   private curiousFlip = 0;
   /** What it chose last, so it doesn't do the same thing over and over. */
   private lastCat = '';
@@ -406,8 +408,9 @@ export class Pet {
     return this.rig.growth;
   }
   /** Screen pixels per rig unit. */
+  /** Screen pixels per rig unit: the size setting, how grown up it is, and its species' size. */
   get px() {
-    return SIZE_SCALE[this.settings.size] * this.rig.size;
+    return SIZE_SCALE[this.settings.size] * this.rig.size * (this.species.scale ?? 1);
   }
   get heightPx() {
     return this.hatched ? this.rig.height * this.px : this.eggSize * 1.1;
@@ -534,6 +537,7 @@ export class Pet {
     if (this.act.k === 'sleep') this.wake(false);
     Toys.putToy(this, kind);
     this.say('toy');
+    this.sound('curious', true);
   }
 
   /** Its signature move, asked for from the panel (each press does the next of its moves). */
@@ -836,7 +840,13 @@ export class Pet {
       this.pendingTrick = name;
       return;
     }
-    if (!this.grounded || this.anchored) return;
+    if (!this.grounded || this.anchored) {
+      // Mid-jump, flying or climbing: it does the trick as soon as it's back on its feet.
+      this.pendingTrick = name;
+      this.pendingTrickAt = this.time;
+      return;
+    }
+    this.pendingTrick = null;
     this.vx = 0;
     switch (name) {
       case 'dance':
@@ -935,7 +945,7 @@ export class Pet {
     const n = r.steps - this.lastSteps;
     this.lastSteps = r.steps;
     if (n <= 0 || !this.grounded || this.rot !== 0) return;
-    const heavy = r.p.hipR * r.size * SIZE_SCALE[this.settings.size] >= 14;
+    const heavy = r.p.hipR * this.px >= 14;
     const running = r.run > 0.5;
     if (!heavy && !running) return;
     const foot = this.toWorld({ x: r.stepX, y: 0 });
@@ -1138,6 +1148,7 @@ export class Pet {
     this.events.push({ type: 'dust', x, y: p.y, big: hard }, { type: 'squash', amount: clamp(impact / 1800, 0.08, 0.35) });
     if (!this.hatched) return;
     if (impact > 700) this.sound('thud', impact < 1100);
+    if (hard) this.sound('yelp');
     const a = this.act;
     // Told to nap mid-hop: just keep sleeping once down.
     if (a.k === 'sleep') return;
@@ -1303,6 +1314,7 @@ export class Pet {
     Toys.dropToy(this);
     this.act = { k: 'sleep', reason, t: 0, dur, nextZ: 2.5, settle };
     if (settle > 2) this.sound('yawn', true);
+    else if (settle > 0) this.sound('murmur', true);
     this.vx = 0;
   }
 
@@ -1341,7 +1353,7 @@ export class Pet {
         break;
       case 'annoyed':
         this.emote('anger');
-        this.sound('growl');
+        this.sound(this.species.diet === 'herbivore' ? 'huff' : 'growl');
         this.pokes = [];
         break;
       case 'welcome':
@@ -1361,7 +1373,7 @@ export class Pet {
         break;
       case 'hungry':
         this.emote('food');
-        this.sound('chirp');
+        this.sound('whine');
         break;
       case 'chirp':
         this.sound('call', soft);
@@ -1386,11 +1398,19 @@ export class Pet {
     const r = this.env.rand;
     const d = this.data;
     const pers = this.species.personality;
-    // Asked for while it couldn't: its signature move comes first.
+    // Asked for while it couldn't: its signature move or trick comes first.
     if (this.pendingSpecial) {
       const m = this.pendingSpecial;
       this.pendingSpecial = null;
       if (Moves.startMove(this, m, true)) return;
+    }
+    if (this.pendingTrick) {
+      const t = this.pendingTrick;
+      this.pendingTrick = null;
+      if (this.time - this.pendingTrickAt < 20 && this.grounded && !this.anchored) {
+        this.trick(t);
+        if (this.act.k !== 'idle') return;
+      }
     }
     const food = this.foods.find((f) => f.landed);
     if (food) {

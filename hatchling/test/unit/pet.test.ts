@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rng } from '../../src/pet/math';
-import { ANKY, BUILT_IN, GALLI, PACHY, RAPTOR, REX, SPINO, STEGO, TRIKE } from '../../src/pet/species';
+import { ANKY, BUILT_IN, COMPY, GALLI, PACHY, QUETZAL, RAPTOR, REX, SPINO, STEGO, TRIKE } from '../../src/pet/species';
 import { DEFAULT_SETTINGS, newPet, type Platform, type Settings, type Wall } from '../../src/shared/types';
 import { Pet, type SimEvent } from '../../src/sim/pet';
 import { ground } from '../../src/sim/world';
@@ -391,4 +391,25 @@ describe('pet', () => {
     expect(lively.play).toBeGreaterThan(calm.play * 2);
     expect(lively.play).toBeGreaterThan(0.12);
   }, 60_000);
+
+  it('small species are small and big ones big, at the same age', () => {
+    const at = (species: typeof REX) => make({ species, hours: 60 }).pet.px;
+    expect(at(COMPY) / at(RAPTOR)).toBeCloseTo(0.6, 2);
+    expect(at(QUETZAL)).toBeGreaterThan(at(RAPTOR));
+  });
+
+  it('a trick asked for in mid-air happens once it lands', () => {
+    const { pet, run } = make({ species: RAPTOR, seed: 3 });
+    run(1);
+    pet.act = { k: 'fall', t: 0, resume: null, voluntary: false };
+    pet.grounded = false;
+    pet.y -= 200;
+    pet.trick('dance');
+    expect(pet.act.k).toBe('fall');
+    let danced = false;
+    run(6, () => {
+      if (pet.act.k === 'dance') danced = true;
+    });
+    expect(danced).toBe(true);
+  });
 });
