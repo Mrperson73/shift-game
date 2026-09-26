@@ -379,7 +379,8 @@ describe('pet', () => {
       });
       const total = Object.values(time).reduce((a, b) => a + b, 0);
       const moving = ((time.walk ?? 0) + (time.travel ?? 0)) / total;
-      const play = ['zoomies', 'tail', 'dance', 'hop', 'pounce', 'hunt', 'chase'].reduce((a, k) => a + (time[k] ?? 0), 0) / total;
+      // Play includes climbing the screen edges for fun (there are no windows here to climb to).
+      const play = ['zoomies', 'tail', 'dance', 'hop', 'pounce', 'hunt', 'chase', 'climbfun', 'climb', 'cling', 'toy', 'tag', 'leap'].reduce((a, k) => a + (time[k] ?? 0), 0) / total;
       return { moving, play, kinds: Object.keys(time).length };
     };
     const lively = share('lively');
