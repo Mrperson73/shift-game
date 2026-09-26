@@ -71,7 +71,7 @@ To uninstall, go to **Settings → Apps → Installed apps → Hatchling**. This
 | **Rub** it with your cursor | Petting: hearts, happy eyes, tail wag |
 | **Drag** it | Pick it up; let go to drop it, or flick to throw it (it lands a bit dizzy) |
 | **Double-click** it | Opens its card: growth, mood, energy, hunger and stats |
-| **Right-click** it, or the tray icon | Feed, play ball, come here, nap, wake up, tricks, toys, its special move, feed or wake everyone, pick a dino, hide for an hour, settings |
+| **Right-click** it, or the tray icon | Feed, play ball, come here, nap, wake up, tricks, toys, its special move, feed or wake everyone, pick a dino, settings |
 
 **Feed** drops its favourite food near it (meat, fish, leaves or berries). It finds the food, climbing to it if needed. **Play ball** gives it a ball to chase and kick; you can throw the ball too. From its card you can also ask for **tricks** (dance, roar, spin, sit, shake, jump, bow and play dead), put out a **toy**, give it a **growth treat** or ask for its species' **special move**. The pet never gets sick and never dies. Food and play just make it happier.
 

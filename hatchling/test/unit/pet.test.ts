@@ -412,4 +412,16 @@ describe('pet', () => {
     });
     expect(danced).toBe(true);
   });
+
+  it('is easy to click: a few pixels around its body count, and small ones anywhere in their box', () => {
+    const { pet, run } = make({ species: RAPTOR, hours: 60 });
+    run(0.5);
+    const top = pet.toWorld({ x: 0, y: pet.rig.s.hip.y + pet.rig.s.hipR });
+    expect(pet.hitTest({ x: top.x, y: top.y - 6 })).toBe(true);
+    expect(pet.hitTest({ x: top.x, y: top.y - 40 })).toBe(false);
+    const baby = make({ species: COMPY, hours: 0.1 });
+    baby.run(0.5);
+    const b = baby.pet.rig.s.bounds;
+    expect(baby.pet.hitTest(baby.pet.toWorld({ x: b.x1 + 1, y: b.y2 - 1 }))).toBe(true);
+  });
 });

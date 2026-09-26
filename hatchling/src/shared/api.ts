@@ -48,6 +48,8 @@ export interface OverlayApi {
   /** A dino should leave this monitor: answer with leave({ how: 'removed' }). */
   onRemove(cb: (id: string) => void): void;
   setCapture(on: boolean): void;
+  /** The cursor is near a dino (or not): the main process then watches the mouse more closely. */
+  setNear(on: boolean): void;
   save(p: PetData): void;
   leave(l: Leave): void;
   /** Tells the main process what's going on (tray tooltip, notifications, how often to poll). */

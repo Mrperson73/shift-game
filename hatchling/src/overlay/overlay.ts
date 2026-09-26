@@ -622,10 +622,13 @@ function overBall(h: Host, p: Pt) {
 }
 
 /** Cheap box check before the exact one: most of the time the cursor is nowhere near a dino. */
-function nearPet(h: Host, c: Pt) {
-  const r = h.canvasW / 2 || 200;
+function nearPet(h: Host, c: Pt, margin = 0) {
+  const r = (h.canvasW / 2 || 200) + margin;
   return Math.abs(c.x - h.pet.x) < r && c.y > h.pet.y - r && c.y < h.pet.y + r;
 }
+
+/** Whether the main process is watching the mouse closely for this overlay (see setNear). */
+let near = false;
 
 /** The topmost dino at a point. */
 function petAt(p: Pt): Host | null {
@@ -666,6 +669,13 @@ function updateHover() {
   const c = !hidden && !locked ? cursor : null;
   hover = c ? petAt(c) : null;
   setCapture(!!c && (hover !== null || ballAt(c) !== null || toyAt(c) !== null));
+  // Close to a dino (or its ball or toys), mouse moves come straight to this page, so it takes
+  // the mouse the moment the pointer is over it, and a quick click never falls through.
+  const n = !!c && (hover !== null || hosts.some((h) => nearPet(h, c, 120) || (!!h.pet.ball && Math.hypot(c.x - h.pet.ball.x, c.y - h.pet.ball.y) < 160) || h.pet.toys.length > 0));
+  if (n !== near) {
+    near = n;
+    api.setNear(n);
+  }
 }
 
 /** Let go of whatever is held (mouse released, focus lost, or a missed mouseup). */
@@ -708,6 +718,8 @@ window.addEventListener('mousemove', (e) => {
   else if (dragging?.what === 'ball') dragging.host.pet.dragBall(p);
   else if (dragging?.what === 'toy') dragging.host.pet.dragToy(p);
   else if (!down && prev) petAt(p)?.pet.stroke(Math.hypot(p.x - prev.x, p.y - prev.y));
+  // Take (or give back) the mouse right away rather than on the next frame.
+  if (!dragging && !down) updateHover();
 });
 
 window.addEventListener('mousedown', (e) => {
@@ -743,8 +755,10 @@ window.addEventListener('mouseup', (e) => {
 });
 
 window.addEventListener('blur', () => endPointer());
+// While the button is down the pointer is captured and its release always arrives, so a leave
+// then (which the system sends when the window starts taking the mouse) must not cancel a click.
 document.addEventListener('mouseleave', () => {
-  if (!dragging) endPointer();
+  if (!dragging && !down) endPointer();
 });
 
 window.addEventListener('dblclick', (e) => {
@@ -837,7 +851,10 @@ async function main() {
   });
   api.onCursor((p) => {
     // The window's own mouse events are exact: the polled cursor only fills in between them.
-    if (!dragging && !down && performance.now() - mouseAt > 300) cursor = p;
+    if (!dragging && !down && performance.now() - mouseAt > 300) {
+      cursor = p;
+      updateHover();
+    }
   });
   api.onActivity((a) => {
     activity = a;

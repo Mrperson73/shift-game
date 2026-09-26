@@ -664,8 +664,17 @@ export class Pet {
       return Math.abs(pt.x - this.x) < s * 0.4 && pt.y < this.y + 2 && pt.y > this.y - s;
     }
     const l = this.toLocal(pt);
-    const pad = 3 / this.px;
-    return this.rig.hitCircles().some((c) => Math.hypot(c.p.x - l.x, c.p.y - l.y) <= c.r + pad);
+    // Generous: a few pixels around the body, every part at least finger-sized, and small or
+    // flying dinos anywhere in their box.
+    const px = this.px;
+    const pad = 8 / px;
+    const min = 7 / px;
+    if (this.rig.s.bounds && (this.heightPx < 70 || this.flying || this.rig.pose.fly > 0.3)) {
+      const b = this.rig.s.bounds;
+      const wing = this.species.features.wings && (this.flying || this.rig.pose.fly > 0.3) ? this.rig.reach * 0.35 : 0;
+      if (l.x > b.x1 - pad - wing * 0.4 && l.x < b.x2 + pad + wing * 0.4 && l.y > b.y1 - pad && l.y < b.y2 + pad + wing) return true;
+    }
+    return this.rig.hitCircles().some((c) => Math.hypot(c.p.x - l.x, c.p.y - l.y) <= Math.max(c.r, min) + pad);
   }
 
   /** Rig coordinates (x forward, y up) to overlay coordinates. */

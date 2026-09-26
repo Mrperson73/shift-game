@@ -156,6 +156,9 @@ test.describe.serial('Hatchling', () => {
   test('dragging and throwing it, then it lands', async () => {
     const overlay = await windowBy('overlay');
     await overlay.waitForTimeout(2500);
+    // Ask it to sit first, so it isn't racing about when we reach for it.
+    await app.evaluate(() => (global as unknown as { __hatchling: { sendOverlay: (c: string, p: unknown) => void } }).__hatchling.sendOverlay('command', { type: 'trick', name: 'sit' }));
+    await expect.poll(async () => (await pet(overlay)).act, { timeout: 10_000 }).toBe('sit');
     const p = await pet(overlay);
     await overlay.mouse.move(p.x, p.y - 15);
     await overlay.mouse.down();

@@ -45,7 +45,6 @@ let species: SpeciesDef[] = BUILT_IN;
 let problems: ModProblem[] = [];
 let panel: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let hiddenUntil = 0;
 let locked = false;
 let game: string | null = null;
 /** Windows of running games are left out of the dinos' world, so they never walk over a game. */
@@ -212,6 +211,12 @@ interface Overlay {
   hidden: boolean;
   /** It takes the mouse (the cursor is over a dino). */
   capture: boolean;
+  /** The cursor is near one of its dinos: mouse moves are forwarded to the page, so a dino reacts
+   * the moment the pointer reaches it (Windows only; elsewhere the cursor is polled faster). */
+  near: boolean;
+  /** What the window currently does with the mouse (only changed when it has to: every change
+   * can make the system send the page a spurious mouse-leave). */
+  mouse: 'take' | 'forward' | 'through';
   lastWorld: string;
   lastCursor: string;
   /** The dinos on it, including ones on their way in or out. */
@@ -299,7 +304,7 @@ function createOverlay(mon: Mon): Overlay {
       spellcheck: false,
     },
   });
-  const o: Overlay = { mon, win, ready: false, shown: false, hidden: Date.now() < hiddenUntil, capture: false, lastWorld: '', lastCursor: '', pets: new Set(), queue: [], removals: [], emptySince: 0 };
+  const o: Overlay = { mon, win, ready: false, shown: false, hidden: false, capture: false, near: false, mouse: 'through', lastWorld: '', lastCursor: '', pets: new Set(), queue: [], removals: [], emptySince: 0 };
   overlays.set(mon.id, o);
   win.setIgnoreMouseEvents(true);
   win.setAlwaysOnTop(true, 'screen-saver');
@@ -326,6 +331,8 @@ function createOverlay(mon: Mon): Overlay {
     log('overlay unresponsive');
     if (!win.isDestroyed()) win.setIgnoreMouseEvents(true);
     o.capture = false;
+    o.near = false;
+    o.mouse = 'through';
   });
   // Windows is shutting down or logging off (before-quit doesn't fire then): save what we have.
   win.on('query-session-end', () => {
@@ -441,6 +448,18 @@ function left(o: Overlay, id: string, l: Leave | null) {
   save();
   pushPanel();
   if (!o.pets.size && !mons.some((m) => m.id === o.mon.id)) dropOverlay(o);
+}
+
+/** Click-through except over a dino; near one, mouse moves still reach the page (forwarded), so
+ * it can take the mouse the instant the pointer gets there instead of at the next cursor poll. */
+function applyMouse(o: Overlay) {
+  if (o.win.isDestroyed()) return;
+  // Forwarding is a Windows feature; elsewhere the faster cursor polling does the job.
+  const mode = o.capture ? 'take' : o.near && process.platform === 'win32' ? 'forward' : 'through';
+  if (mode === o.mouse) return;
+  o.mouse = mode;
+  if (mode === 'take') o.win.setIgnoreMouseEvents(false);
+  else o.win.setIgnoreMouseEvents(true, { forward: mode === 'forward' });
 }
 
 function setOverlayHidden(o: Overlay, h: boolean) {
@@ -564,7 +583,8 @@ function pollCursor() {
     }
   }
   const active = capture || now - cursorMovedAt < 3000;
-  cursorTimer = setTimeout(pollCursor, !overlays.size || locked || allHidden() ? 500 : active ? 33 : 200);
+  const near = [...overlays.values()].some((o) => o.near);
+  cursorTimer = setTimeout(pollCursor, !overlays.size || locked || allHidden() ? 500 : near ? 16 : active ? 33 : 150);
 }
 
 let processTick = 0;
@@ -598,10 +618,9 @@ function pollActivity() {
 }
 
 function pollFullscreen() {
-  const all = Date.now() < hiddenUntil;
   let full: Area | null = null;
   // Off by default: dinos stay visible all the time unless you turn this on in Settings.
-  if (!all && settings().hideFullscreen && desktop.available && overlays.size) {
+  if (settings().hideFullscreen && desktop.available && overlays.size) {
     try {
       const fg = desktop.foreground(ownHandles());
       if (fg?.fullscreen) full = screen.screenToDipRect(null, { x: fg.monitor.left, y: fg.monitor.top, width: fg.monitor.right - fg.monitor.left, height: fg.monitor.bottom - fg.monitor.top });
@@ -613,7 +632,7 @@ function pollFullscreen() {
     // Only the monitor the full-screen app is on.
     const b = o.mon.bounds;
     const covered = !!full && Math.abs(full.x - b.x) < 4 && Math.abs(full.y - b.y) < 4 && Math.abs(full.width - b.width) < 4;
-    setOverlayHidden(o, all || covered);
+    setOverlayHidden(o, covered);
     watchdog(o);
     if (!o.pets.size && o.emptySince && Date.now() - o.emptySince > 60_000) dropOverlay(o);
   }
@@ -640,12 +659,8 @@ function trayText() {
 function petMenu(): MenuItemConstructorOptions[] {
   const s = store.data;
   const d = selectedDino();
-  const hidden = Date.now() < hiddenUntil;
   const end: MenuItemConstructorOptions[] = [
     { type: 'separator' },
-    hidden
-      ? { label: 'Show again', click: () => ((hiddenUntil = 0), pollFullscreen(), rebuildTray()) }
-      : { label: 'Hide for an hour', click: () => ((hiddenUntil = Date.now() + 3600_000), pollFullscreen(), rebuildTray()) },
     ...(d ? [{ label: 'Pet card…', click: () => openPanel('card') }] : []),
     { label: 'My dinos…', click: () => openPanel(s.roster.length ? 'dinos' : 'choose') },
     { label: 'Settings…', click: () => openPanel('settings') },
@@ -871,8 +886,15 @@ function registerIpc() {
     const o = overlayOf(e);
     if (!o) return;
     o.capture = !!on;
-    o.win.setIgnoreMouseEvents(!on);
+    applyMouse(o);
     if (on) pollCursor();
+  });
+  ipcMain.on('overlay:near', (e, on: boolean) => {
+    const o = overlayOf(e);
+    if (!o || o.near === !!on) return;
+    o.near = !!on;
+    applyMouse(o);
+    pollCursor();
   });
   ipcMain.on('overlay:save', (e, raw: unknown) => {
     const o = overlayOf(e);

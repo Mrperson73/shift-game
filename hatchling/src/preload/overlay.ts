@@ -18,6 +18,7 @@ const api: OverlayApi = {
   onAdd: on('add'),
   onRemove: on('remove'),
   setCapture: (v) => ipcRenderer.send('overlay:capture', !!v),
+  setNear: (v) => ipcRenderer.send('overlay:near', !!v),
   save: (p) => ipcRenderer.send('overlay:save', p),
   leave: (l) => ipcRenderer.send('overlay:leave', l),
   notify: (e) => ipcRenderer.send('overlay:notify', e),
