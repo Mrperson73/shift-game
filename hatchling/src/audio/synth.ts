@@ -189,6 +189,22 @@ export class Patch {
     return xs[Math.min(xs.length - 1, Math.floor(this.rand() * xs.length))];
   }
 
+  /** True with probability `k`. */
+  chance(k: number) {
+    return this.rand() < k;
+  }
+
+  /** An index into `weights`, picked in proportion to them (variants a species favours weigh more). */
+  choose(weights: readonly number[]) {
+    const total = weights.reduce((s, x) => s + Math.max(0, x), 0);
+    let r = this.rand() * total;
+    for (let i = 0; i < weights.length; i++) {
+      r -= Math.max(0, weights[i]);
+      if (r < 0) return i;
+    }
+    return weights.length - 1;
+  }
+
   /** A frequency kept inside the audible, representable range. */
   hz(f: number) {
     return clamp(f, 8, this.ctx.sampleRate * 0.45);
@@ -320,5 +336,44 @@ export function burst(p: Patch, to: AudioNode, t: number, type: BiquadFilterType
   const g = p.gain(0);
   const end = perc(g.gain, t, attack, level, decay);
   p.noise(t, end).connect(p.filter(type, f, q)).connect(g).connect(to);
+  return end;
+}
+
+/** One grain: [start (s after t), level, decay (s), filter or pitch frequency (Hz), pitch at its end (pings)]. */
+export type Grain = readonly [number, number, number, number, number?];
+
+/**
+ * Many short noise grains through one filter and one envelope — crackles, rustles, scrapes, ticks — in
+ * three nodes however many there are. A grain waits for the one before it to end. Returns the end.
+ */
+export function grains(p: Patch, to: AudioNode, t: number, gs: readonly Grain[], type: BiquadFilterType = 'bandpass', q = 1, attack = 0.001) {
+  const bp = p.filter(type, gs.length ? gs[0][3] : 1000, q);
+  const g = p.gain(0);
+  let end = t;
+  for (const [at, lv, decay, f] of gs) {
+    const s = Math.max(t + at, end);
+    bp.frequency.setValueAtTime(p.hz(f), s);
+    end = perc(g.gain, s, attack, lv, decay);
+  }
+  p.noise(t, end + 0.002).connect(bp).connect(g).connect(to);
+  return end;
+}
+
+/** Short pitched pings on one oscillator — droplets, twinkles, chirps — each gliding to its end pitch. */
+export function pings(p: Patch, to: AudioNode, t: number, gs: readonly Grain[], type: Wave = 'sine', attack = 0.002) {
+  const g = p.gain(0);
+  const times: number[] = [];
+  let end = t;
+  for (const [at, lv, decay] of gs) {
+    const s = Math.max(t + at, end);
+    times.push(s);
+    end = perc(g.gain, s, attack, lv, decay);
+  }
+  const o = p.osc(type, gs.length ? gs[0][3] : 1000, t, end + 0.002);
+  gs.forEach(([, , decay, f0, f1], i) => {
+    o.frequency.setValueAtTime(p.hz(f0), times[i]);
+    if (f1 !== undefined && f1 !== f0) o.frequency.exponentialRampToValueAtTime(p.hz(f1), times[i] + attack + decay * 0.6);
+  });
+  o.connect(g).connect(to);
   return end;
 }

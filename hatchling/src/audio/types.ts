@@ -57,10 +57,16 @@ export type SoundName =
   | 'chew' // gnawing a bone
   | 'rustle' // leaves (browsing, a leaf pile)
   | 'magic' // growth treat sparkle
-  | 'snort'; // short nasal snort (charging, annoyed herbivores)
+  | 'snort' // short nasal snort (charging, annoyed herbivores)
+  | 'huff' // a breath out: effort, relief, mild annoyance (a nose huff, two, or a sigh)
+  | 'click' // tongue or beak clicks while thinking or curious
+  | 'murmur' // soft sleepy or contented "mm-hm" (settling down, dozing, cuddled)
+  | 'curious' // questioning "hm?" rising at the end (a new toy, the cursor, something odd)
+  | 'yelp' // short startled cry (dropped, bumped, spooked)
+  | 'whine'; // pleading whimper (hungry, wants attention)
 
 /** Sounds of the panel window's UI. */
 export type UiSound = 'click' | 'toggle' | 'tab' | 'select' | 'hatch' | 'open' | 'error' | 'coin';
 
-export const SOUND_NAMES: SoundName[] = ['call', 'roar', 'chirp', 'growl', 'happy', 'purr', 'crunch', 'gulp', 'yawn', 'snore', 'sneeze', 'squeak', 'boing', 'thud', 'step', 'crack', 'hatch', 'grow', 'whoosh', 'pop', 'sniff', 'flap', 'splash', 'bonk', 'swish', 'whip', 'dig', 'stomp', 'toy', 'bubble', 'chew', 'rustle', 'magic', 'snort'];
+export const SOUND_NAMES: SoundName[] = ['call', 'roar', 'chirp', 'growl', 'happy', 'purr', 'crunch', 'gulp', 'yawn', 'snore', 'sneeze', 'squeak', 'boing', 'thud', 'step', 'crack', 'hatch', 'grow', 'whoosh', 'pop', 'sniff', 'flap', 'splash', 'bonk', 'swish', 'whip', 'dig', 'stomp', 'toy', 'bubble', 'chew', 'rustle', 'magic', 'snort', 'huff', 'click', 'murmur', 'curious', 'yelp', 'whine'];
 export const UI_SOUNDS: UiSound[] = ['click', 'toggle', 'tab', 'select', 'hatch', 'open', 'error', 'coin'];
